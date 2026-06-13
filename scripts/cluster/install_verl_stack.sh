@@ -24,7 +24,7 @@ fi
 
 export CUDA_HOME="${CUDA_HOME:-/usr/local/software/cuda/12.1}"
 export CUDA_PATH="$CUDA_HOME"
-export PATH="/home/as3727/.local/bin:$CUDA_HOME/bin:$PATH"
+export PATH="${LOCAL_BIN_DIR:-$HOME/.local/bin}:$CUDA_HOME/bin:$PATH"
 GCC_LIBSTDCPP_DIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
 export LD_LIBRARY_PATH="$GCC_LIBSTDCPP_DIR:$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH CUDA_INC_PATH

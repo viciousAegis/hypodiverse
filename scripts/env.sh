@@ -20,10 +20,22 @@ esac
 
 _SD_ENV_FILE="${ENV_FILE:-$REPO_DIR/.env}"
 if [[ -f "$_SD_ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$_SD_ENV_FILE"
-  set +a
+  _SD_DOTENV_EXPORTS="$(
+    set +u
+    set -a
+    # shellcheck disable=SC1090
+    source "$_SD_ENV_FILE"
+    for _SD_KEY in WANDB_API_KEY OPENAI_API_KEY HF_TOKEN HF_HUB_TOKEN HUGGING_FACE_HUB_TOKEN; do
+      _SD_VALUE="${!_SD_KEY-}"
+      if [[ -n "$_SD_VALUE" ]]; then
+        printf 'export %s=%q\n' "$_SD_KEY" "$_SD_VALUE"
+      fi
+    done
+  )" || {
+    echo "Failed to load secrets from $_SD_ENV_FILE" >&2
+    return 1 2>/dev/null || exit 1
+  }
+  eval "$_SD_DOTENV_EXPORTS"
 fi
 
 if [[ "$_SD_XTRACE" == "1" ]]; then
@@ -103,4 +115,4 @@ case ":${PYTHONPATH:-}:" in
   *) export PYTHONPATH="$REPO_DIR/src${PYTHONPATH:+:$PYTHONPATH}" ;;
 esac
 
-unset _SD_SCRIPT_DIR _SD_DEFAULT_REPO_DIR _SD_ENV_FILE _SD_XTRACE
+unset _SD_SCRIPT_DIR _SD_DEFAULT_REPO_DIR _SD_ENV_FILE _SD_XTRACE _SD_DOTENV_EXPORTS

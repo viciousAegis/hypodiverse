@@ -40,14 +40,27 @@ artifacts/wandb/      W&B artifacts
 
 ## Cluster Environment
 
-Copy the example env file and edit cluster-specific values:
+Copy the example env file only if you need secrets/tokens:
 
 ```bash
 cp .env.example .env
 ```
 
-The Slurm scripts source `scripts/env.sh`, which loads `.env` with shell xtrace
-disabled so secrets such as `WANDB_API_KEY` are not printed into logs.
+`.env` is intentionally secrets-only. Normal configuration lives elsewhere:
+
+```text
+configs/verl/runs/*.yaml       model, train/val files, batch sizes, rollout count
+configs/verl/datasets/*.yaml   generated dataset specs
+scripts/env.sh                 repo-local cache/path defaults
+scripts/cluster/*.slurm        Slurm account, partition, GPU count, modules
+```
+
+The Slurm scripts source `scripts/env.sh`, which imports only recognized
+secret/token keys from `.env` with shell xtrace disabled. Currently that list is
+`WANDB_API_KEY`, `OPENAI_API_KEY`, `HF_TOKEN`, `HF_HUB_TOKEN`, and
+`HUGGING_FACE_HUB_TOKEN`. By default, submit from the repo root and do not set
+`REPO_DIR`; the Slurm scripts use `SLURM_SUBMIT_DIR` and then `scripts/env.sh`
+derives the repo paths.
 
 If `$VENV_DIR` does not exist, the first Slurm run runs:
 
@@ -85,8 +98,9 @@ veRL from a source checkout under $CACHE_ROOT/src/verl
 veRL's [sglang] extra, which installs the SGLang backend
 ```
 
-Override `PYTORCH_INDEX_URL`, `TORCH_SPEC`, `VERL_SRC`, or `INSTALL_TORCH` in
-`.env` if the cluster image already provides a compatible CUDA stack.
+Override `PYTORCH_INDEX_URL`, `TORCH_SPEC`, `VERL_SRC`, or `INSTALL_TORCH`
+inline when invoking `scripts/cluster/install_verl_stack.sh` if the cluster
+image already provides a compatible CUDA stack.
 
 If a large wheel download times out, rerun the same command. The installer uses
 repo-local uv caches and retries, so completed downloads are reused:

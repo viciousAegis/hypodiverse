@@ -8,6 +8,11 @@ if [[ -f scripts/env.sh ]]; then
   source scripts/env.sh
 fi
 
+if [[ -f scripts/cluster/resolve_model_path.sh ]]; then
+  # shellcheck disable=SC1091
+  source scripts/cluster/resolve_model_path.sh
+fi
+
 export PYTHONUNBUFFERED=1
 export HF_HOME="${HF_HOME:-$PWD/.cache/huggingface}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"

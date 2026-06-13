@@ -59,6 +59,17 @@ task
 reward_profile
 ```
 
+`configs/verl/runs/*.yaml` files are veRL training launch defaults:
+
+```text
+runs/scattered_smoke.yaml   2-GPU smoke training defaults
+runs/scattered_pilot.yaml   4-GPU pilot training defaults
+```
+
+These control train/val file paths, batch sizes, rollout count, save/test
+frequency, token lengths, model ID/download behavior, and experiment name
+prefix. Environment variables passed through Slurm still override YAML values.
+
 Reward defaults are centralized in `src/scattered_discovery/rewards.py`.
 The default profile is `terminal_only` for clean GRPO/pass@K comparisons.
 Dataset entries can opt into `shaped` with `reward_profile: shaped`, or

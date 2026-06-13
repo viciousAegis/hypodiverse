@@ -42,3 +42,12 @@ Reward controls live in `reward_profile` or `task.reward`. Environment dynamics
 live under `task.world` for `scattered_causal`.
 Use `dispersion_values` for balanced mixed scattered-causal train/val files and
 `world_values` for graph-shape distributions.
+
+```text
+configs/verl/runs/
+```
+
+YAML defaults for veRL training launches: dataset config path, train/val files,
+model ID/download behavior, batch sizes, rollout count, save/test frequency,
+token lengths, and experiment name prefix. Slurm resources stay in
+`scripts/cluster/*.slurm`.

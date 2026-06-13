@@ -8,17 +8,28 @@ dataset row -> EnvSpec -> DiscoveryEnv -> veRL AgentLoop -> SGLang rollout -> fi
 
 The default script assumes one node with several GPUs, SGLang rollouts, GRPO, and W&B logging.
 
-Before submitting, copy `.env.example` to `.env` and edit cluster paths/secrets:
+Before submitting, copy `.env.example` to `.env` only if you need secrets:
 
 ```bash
 cp .env.example .env
 ```
 
+Do not put normal run configuration in `.env`. The split is:
+
+```text
+.env                         secrets only: WANDB_API_KEY, HF_TOKEN, OPENAI_API_KEY
+configs/verl/runs/*.yaml     model, train/val files, batch sizes, rollout count
+configs/verl/datasets/*.yaml dataset generation specs
+scripts/env.sh               repo-local cache/path defaults
+scripts/cluster/*.slurm      Slurm account, partition, GPU count, modules
+```
+
 The Slurm scripts load the cluster modules, source `scripts/env.sh`, create
-repo-local cache directories, optionally download the model into `$MODEL_ROOT`,
-and verify the Python training stack before launching veRL. If `$VENV_DIR` is
-missing, they run `uv sync --extra verl`; this initializes the project venv but
-does not replace a proper veRL/SGLang CUDA install.
+repo-local cache directories, verify the Python training stack, then call the
+run wrapper. The wrapper loads the YAML run config and only then resolves or
+downloads the model into `$MODEL_ROOT`. If `$VENV_DIR` is missing, the bootstrap
+runs `uv sync --extra verl`; this initializes the project venv but does not
+replace a proper veRL/SGLang CUDA install.
 
 Install the CUDA training stack once:
 
@@ -130,10 +141,22 @@ Smoke run:
 sbatch scripts/cluster/sbatch_verl_smoke_grpo.slurm
 ```
 
+Smoke training defaults live in:
+
+```text
+configs/verl/runs/scattered_smoke.yaml
+```
+
 Pilot run:
 
 ```bash
 sbatch scripts/cluster/sbatch_verl_pilot_grpo.slurm
+```
+
+Pilot training defaults live in:
+
+```text
+configs/verl/runs/scattered_pilot.yaml
 ```
 
 Logs are written to:
@@ -143,10 +166,11 @@ logs/slurm/%x-%j.out
 logs/slurm/%x-%j.err
 ```
 
-Override runtime variables with `--export=ALL,...`:
+Override runtime variables with `--export=ALL,...`; this is for one-off
+overrides, not the normal place to maintain experiment defaults:
 
 ```bash
-sbatch --export=ALL,MODEL_PATH=Qwen/Qwen3-4B,WANDB_LOGGER='["console"]' \
+sbatch --export=ALL,MODEL_ID=Qwen/Qwen3-4B,WANDB_LOGGER='["console"]' \
   scripts/cluster/sbatch_verl_smoke_grpo.slurm
 ```
 
@@ -160,8 +184,8 @@ sbatch --partition=gpu --gres=gpu:8 --export=ALL,NGPUS_PER_NODE=8,ROLLOUT_N=8 \
 The `.slurm` scripts call the corresponding shell wrappers:
 
 ```text
-sbatch_verl_smoke_grpo.slurm -> run_verl_smoke_grpo.sh -> run_verl_discovery_grpo.sh
-sbatch_verl_pilot_grpo.slurm -> run_verl_pilot_grpo.sh -> run_verl_discovery_grpo.sh
+sbatch_verl_smoke_grpo.slurm -> run_verl_smoke_grpo.sh -> configs/verl/runs/scattered_smoke.yaml -> run_verl_discovery_grpo.sh
+sbatch_verl_pilot_grpo.slurm -> run_verl_pilot_grpo.sh -> configs/verl/runs/scattered_pilot.yaml -> run_verl_discovery_grpo.sh
 ```
 
 ## 4. Direct Shell Launch
@@ -217,7 +241,7 @@ Train on scattered causal:
 ```bash
 TRAIN_FILE=data/verl/scattered_causal_train.parquet \
 VAL_FILE=data/verl/scattered_causal_val.parquet \
-MODEL_PATH=Qwen/Qwen3-4B \
+MODEL_ID=Qwen/Qwen3-4B \
 NGPUS_PER_NODE=4 \
 ROLLOUT_N=4 \
 scripts/cluster/run_verl_discovery_grpo.sh
@@ -228,7 +252,7 @@ Set-reward/Puri-style protocol:
 ```bash
 DISCOVERY_ALGO=set_reward_grpo \
 TRAIN_FILE=data/verl/hypospace_causal_set_train.parquet \
-MODEL_PATH=Qwen/Qwen3-4B \
+MODEL_ID=Qwen/Qwen3-4B \
 scripts/cluster/run_verl_discovery_grpo.sh
 ```
 
@@ -237,7 +261,7 @@ Train on HypoSpace causal:
 ```bash
 TRAIN_FILE=data/verl/hypospace_causal_train.parquet \
 VAL_FILE=data/verl/hypospace_causal_val.parquet \
-MODEL_PATH=Qwen/Qwen3-4B \
+MODEL_ID=Qwen/Qwen3-4B \
 NGPUS_PER_NODE=4 \
 ROLLOUT_N=4 \
 scripts/cluster/run_verl_discovery_grpo.sh
@@ -260,7 +284,9 @@ scripts/cluster/run_verl_discovery_grpo.sh
 Model and rollout:
 
 ```bash
-MODEL_PATH=Qwen/Qwen3-4B
+MODEL_ID=Qwen/Qwen3-4B
+DOWNLOAD_MODEL=1
+MODEL_PATH=/path/to/existing/checkpoint  # optional; overrides MODEL_ID download path
 INFER_BACKEND=sglang
 ROLLOUT_N=4
 ROLLOUT_TP=1
@@ -386,7 +412,7 @@ If training fails before rollouts:
 ```text
 Check TRAIN_FILE exists and is readable.
 Check uv sync --extra verl was run in the cluster environment.
-Check MODEL_PATH is accessible from the cluster.
+Check MODEL_ID can be downloaded or MODEL_PATH is accessible from the cluster.
 Check W&B login/API key if logger includes wandb.
 ```
 

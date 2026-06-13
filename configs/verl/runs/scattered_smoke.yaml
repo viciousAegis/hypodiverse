@@ -1,0 +1,22 @@
+# Cheap end-to-end cluster check: dataset generation, SGLang rollout, GRPO
+# update, checkpointing, validation, and W&B logging.
+
+dataset_config: configs/verl/datasets/scattered_smoke.yaml
+prepare_datasets: 1
+
+discovery_algo: grpo
+model_id: Qwen/Qwen3-4B
+download_model: 1
+train_file: data/verl/scattered_causal_smoke_train.parquet
+val_file: data/verl/scattered_causal_smoke_val.parquet
+
+n_gpus_per_node: 2
+train_batch_size: 32
+ppo_mini_batch_size: 16
+rollout_n: 4
+total_epochs: 1
+save_freq: 4
+test_freq: 2
+max_prompt_length: 2048
+max_response_length: 4096
+experiment_name_prefix: scattered_smoke_qwen3_4b
