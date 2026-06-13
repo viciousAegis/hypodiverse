@@ -1,0 +1,45 @@
+# Local Ollama scattered-causal smoke eval for `scattered-discovery-eval`.
+# This is not a veRL training dataset config.
+world:
+  num_branches: 3
+  branch_depth: 2
+  distractors_per_node: 1
+  true_mean: 1.0
+  false_mean: 0.0
+  noise_sigma: 0.30
+  accept_threshold: 0.82
+  reject_threshold: 0.18
+  base_budget: 5
+  test_cost: 1
+  intervene_cost: 1
+  invalid_action_cost: 1
+
+sweep:
+  dispersions: [0.0, 1.0]
+
+eval:
+  protocol: single
+  num_worlds: 1
+  rollouts_per_world: 2
+  max_steps: 5
+  final_commit_attempt: true
+  output_dir: results
+  run_name: smoke_qwen3_1_7b_single
+  seed: 11
+
+model:
+  provider: ollama
+  model: qwen3:1.7b
+  base_url: http://localhost:11434
+  temperature: 0.6
+  top_p: 0.95
+  num_predict: 2048
+  request_timeout_s: 600
+  think: true
+  finalize_empty_content: true
+  finalizer_num_predict: 160
+  finalizer_max_thinking_chars: 12000
+
+agent:
+  include_hidden_debug_in_prompt: false
+  max_evidence_items: 10

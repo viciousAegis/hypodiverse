@@ -1,0 +1,125 @@
+# veRL dataset-generation preset: mixed HypoSpace + scattered-causal splits.
+# Run with `scattered-discovery-make-dataset --config`.
+defaults:
+  agent_name: discovery_agent_loop
+  protocol: single
+  max_steps: 6
+  max_commit: 1
+  reward_profile: terminal_only
+
+datasets:
+  - name: hypospace_causal_train
+    env_type: hypospace_causal
+    output: data/verl/hypospace_causal_train.parquet
+    count: 256
+    seed: 101
+    task:
+      nodes: [A, B, C]
+      max_edges: 2
+      query_budget: 2
+
+  - name: hypospace_causal_val
+    env_type: hypospace_causal
+    output: data/verl/hypospace_causal_val.parquet
+    count: 64
+    seed: 1101
+    task:
+      nodes: [A, B, C]
+      max_edges: 2
+      query_budget: 2
+
+  - name: hypospace_boolean_train
+    env_type: hypospace_boolean
+    output: data/verl/hypospace_boolean_train.parquet
+    count: 256
+    seed: 201
+    task:
+      variables: [x, y]
+      operators: [AND, OR, NOT, XOR, NOR]
+      max_depth: 2
+      query_budget: 2
+
+  - name: hypospace_boolean_val
+    env_type: hypospace_boolean
+    output: data/verl/hypospace_boolean_val.parquet
+    count: 64
+    seed: 1201
+    task:
+      variables: [x, y]
+      operators: [AND, OR, NOT, XOR, NOR]
+      max_depth: 2
+      query_budget: 2
+
+  - name: hypospace_3d_train
+    env_type: hypospace_3d
+    output: data/verl/hypospace_3d_train.parquet
+    count: 256
+    seed: 251
+    task:
+      grid_size: 2
+      max_height: 3
+      max_blocks: 3
+      query_budget: 2
+
+  - name: hypospace_3d_val
+    env_type: hypospace_3d
+    output: data/verl/hypospace_3d_val.parquet
+    count: 64
+    seed: 1251
+    task:
+      grid_size: 2
+      max_height: 3
+      max_blocks: 3
+      query_budget: 2
+
+  - name: scattered_causal_train
+    data_source: scattered_causal_mixed
+    env_type: scattered_causal
+    output: data/verl/scattered_causal_train.parquet
+    count: 256
+    seed: 301
+    dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+    world_values:
+      num_branches: [3, 4, 5]
+      branch_depth: [2, 3]
+      distractors_per_node: [1, 2]
+      base_budget: [5, 7, 9]
+    task:
+      world:
+        true_mean: 1.0
+        false_mean: 0.0
+        noise_sigma: 0.35
+        accept_threshold: 0.82
+        reject_threshold: 0.18
+        test_cost: 1
+        intervene_cost: 1
+        invalid_action_cost: 1
+      agent:
+        include_hidden_debug_in_prompt: false
+        max_evidence_items: 12
+
+  - name: scattered_causal_val
+    data_source: scattered_causal_mixed_val
+    env_type: scattered_causal
+    output: data/verl/scattered_causal_val.parquet
+    count: 320
+    seed: 1301
+    dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+    world_values:
+      num_branches: [3, 4, 5]
+      branch_depth: [2, 3]
+      distractors_per_node: [1, 2]
+      base_budget: [5, 7, 9]
+    task:
+      world:
+        true_mean: 1.0
+        false_mean: 0.0
+        noise_sigma: 0.35
+        accept_threshold: 0.82
+        reject_threshold: 0.18
+        test_cost: 1
+        intervene_cost: 1
+        invalid_action_cost: 1
+      agent:
+        include_hidden_debug_in_prompt: false
+        max_evidence_items: 12

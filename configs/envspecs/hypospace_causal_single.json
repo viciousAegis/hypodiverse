@@ -1,0 +1,15 @@
+{
+  "env_type": "hypospace_causal",
+  "task": {
+    "nodes": ["A", "B", "C"],
+    "max_edges": 2,
+    "target_edges": [["A", "B"], ["B", "C"]],
+    "query_budget": 2,
+    "seed": 11
+  },
+  "protocol": "single",
+  "max_steps": 5,
+  "max_commit": 1,
+  "seed": 11
+}
+

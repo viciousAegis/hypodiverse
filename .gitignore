@@ -1,0 +1,14 @@
+.venv/
+.uv-cache/
+.uv-tools/
+.ruff_cache/
+.ollama-home/
+.ollama-models/
+__pycache__/
+*.py[cod]
+results/
+data/
+checkpoints/
+.cache/
+.wandb/
+.DS_Store

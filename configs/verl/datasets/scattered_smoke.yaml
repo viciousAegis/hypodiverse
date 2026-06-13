@@ -1,0 +1,59 @@
+# veRL dataset-generation preset: small scattered-causal smoke splits.
+# Used by `scripts/cluster/run_verl_smoke_grpo.sh`.
+defaults:
+  agent_name: discovery_agent_loop
+  protocol: single
+  max_steps: 5
+  max_commit: 1
+  reward_profile: terminal_only
+
+datasets:
+  - name: scattered_causal_smoke_train
+    data_source: scattered_causal_smoke_mixed
+    env_type: scattered_causal
+    output: data/verl/scattered_causal_smoke_train.parquet
+    count: 320
+    seed: 4101
+    dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+    task:
+      world:
+        num_branches: 3
+        branch_depth: 2
+        distractors_per_node: 1
+        true_mean: 1.0
+        false_mean: 0.0
+        noise_sigma: 0.25
+        accept_threshold: 0.78
+        reject_threshold: 0.22
+        base_budget: 8
+        test_cost: 1
+        intervene_cost: 1
+        invalid_action_cost: 1
+      agent:
+        include_hidden_debug_in_prompt: false
+        max_evidence_items: 10
+
+  - name: scattered_causal_smoke_val
+    data_source: scattered_causal_smoke_mixed_val
+    env_type: scattered_causal
+    output: data/verl/scattered_causal_smoke_val.parquet
+    count: 80
+    seed: 5101
+    dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+    task:
+      world:
+        num_branches: 3
+        branch_depth: 2
+        distractors_per_node: 1
+        true_mean: 1.0
+        false_mean: 0.0
+        noise_sigma: 0.25
+        accept_threshold: 0.78
+        reject_threshold: 0.22
+        base_budget: 8
+        test_cost: 1
+        intervene_cost: 1
+        invalid_action_cost: 1
+      agent:
+        include_hidden_debug_in_prompt: false
+        max_evidence_items: 10

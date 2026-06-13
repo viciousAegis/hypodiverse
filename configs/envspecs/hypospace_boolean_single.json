@@ -1,0 +1,16 @@
+{
+  "env_type": "hypospace_boolean",
+  "task": {
+    "variables": ["x", "y"],
+    "operators": ["AND", "OR", "NOT", "XOR", "NOR"],
+    "max_depth": 2,
+    "target_expression": "x AND y",
+    "query_budget": 2,
+    "seed": 13
+  },
+  "protocol": "single",
+  "max_steps": 5,
+  "max_commit": 1,
+  "seed": 13
+}
+

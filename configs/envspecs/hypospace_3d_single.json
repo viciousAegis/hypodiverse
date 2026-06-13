@@ -1,0 +1,14 @@
+{
+  "env_type": "hypospace_3d",
+  "task": {
+    "grid_size": 2,
+    "max_height": 3,
+    "max_blocks": 3,
+    "target_heights": [[1, 0], [2, 1]],
+    "query_budget": 2
+  },
+  "protocol": "single",
+  "max_steps": 5,
+  "max_commit": 1,
+  "seed": 3
+}
