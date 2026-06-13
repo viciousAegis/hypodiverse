@@ -64,7 +64,11 @@ export HF_ASSETS_CACHE="${HF_ASSETS_CACHE:-$HF_HOME/assets}"
 export HF_XET_CACHE="${HF_XET_CACHE:-$HF_HOME/xet}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"
 export HF_DATASETS_CACHE="${HF_DATASETS_CACHE:-$HF_HOME/datasets}"
-export RAY_TMPDIR="${RAY_TMPDIR:-$CACHE_ROOT/ray}"
+_SD_RAY_USER="${USER:-$(id -u)}"
+_SD_RAY_JOB="${SLURM_JOB_ID:-local}"
+# Ray puts UNIX sockets under RAY_TMPDIR/ray/session_*/sockets. Keeping this
+# under a deep repo path can exceed the 107-byte AF_UNIX socket path limit.
+export RAY_TMPDIR="${RAY_TMPDIR:-/tmp/sd-ray-${_SD_RAY_USER}-${_SD_RAY_JOB}}"
 export TORCH_HOME="${TORCH_HOME:-$CACHE_ROOT/torch}"
 export TORCH_EXTENSIONS_DIR="${TORCH_EXTENSIONS_DIR:-$CACHE_ROOT/torch_extensions}"
 export TRITON_CACHE_DIR="${TRITON_CACHE_DIR:-$CACHE_ROOT/triton}"
@@ -115,4 +119,4 @@ case ":${PYTHONPATH:-}:" in
   *) export PYTHONPATH="$REPO_DIR/src${PYTHONPATH:+:$PYTHONPATH}" ;;
 esac
 
-unset _SD_SCRIPT_DIR _SD_DEFAULT_REPO_DIR _SD_ENV_FILE _SD_XTRACE _SD_DOTENV_EXPORTS
+unset _SD_SCRIPT_DIR _SD_DEFAULT_REPO_DIR _SD_ENV_FILE _SD_XTRACE _SD_DOTENV_EXPORTS _SD_RAY_USER _SD_RAY_JOB

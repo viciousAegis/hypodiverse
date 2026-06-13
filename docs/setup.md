@@ -26,7 +26,7 @@ data/                 generated train/validation/eval datasets
 checkpoints/          veRL trainer checkpoints
 .cache/models/        downloaded Hugging Face model snapshots
 .cache/huggingface/   HF hub/assets/xet/transformers/datasets caches
-.cache/ray/           Ray temp state
+.cache/ray/           reserved for Ray state, but cluster runs use /tmp by default
 .cache/pip/           pip/uv pip wheel cache
 .cache/torch/         Torch cache
 .cache/torch_extensions/
@@ -37,6 +37,19 @@ checkpoints/          veRL trainer checkpoints
 .wandb/               W&B run/cache/config state
 artifacts/wandb/      W&B artifacts
 ```
+
+Ray is the one deliberate exception to the repo-local cache rule during cluster
+runs. Its plasma-store UNIX socket lives under `RAY_TMPDIR`, and Linux/macOS
+limit AF_UNIX socket paths to about 107 bytes. Deep RDS paths such as
+`.../.cache/ray/ray/session_*/sockets/plasma_store` can exceed that, so
+`scripts/env.sh` defaults `RAY_TMPDIR` to:
+
+```text
+/tmp/sd-ray-${USER}-${SLURM_JOB_ID}
+```
+
+This is node-local runtime socket state, not durable experiment data. Models,
+datasets, W&B state, and checkpoints still stay under the repo.
 
 ## Cluster Environment
 

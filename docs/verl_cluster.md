@@ -31,6 +31,16 @@ downloads the model into `$MODEL_ROOT`. If `$VENV_DIR` is missing, the bootstrap
 runs `uv sync --extra verl`; this initializes the project venv but does not
 replace a proper veRL/SGLang CUDA install.
 
+Ray runtime sockets are kept out of the repo by default:
+
+```text
+RAY_TMPDIR=/tmp/sd-ray-${USER}-${SLURM_JOB_ID}
+```
+
+This avoids Ray's `AF_UNIX path length cannot exceed 107 bytes` failure on deep
+RDS checkout paths. Durable outputs still go to `data/`, `.cache/models/`,
+`.wandb/`, `artifacts/`, and `checkpoints/` under the repo.
+
 Install the CUDA training stack once:
 
 ```bash
