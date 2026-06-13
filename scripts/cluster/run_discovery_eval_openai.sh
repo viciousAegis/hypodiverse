@@ -4,6 +4,11 @@ set -xeuo pipefail
 # Evaluate a base model or trained checkpoint served by SGLang/vLLM/OpenAI-compatible API.
 # Start the server separately, then run this script from the project root.
 
+if [[ -f scripts/env.sh ]]; then
+  # shellcheck disable=SC1091
+  source scripts/env.sh
+fi
+
 export PYTHONUNBUFFERED=1
 export HF_HOME="${HF_HOME:-$PWD/.cache/huggingface}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"

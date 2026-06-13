@@ -18,6 +18,26 @@ UV_CACHE_DIR=.uv-cache uv sync --extra verl
 
 The repo ignores `.uv-cache/`, `.uv-tools/`, `.venv/`, `.ruff_cache/`, `data/`, `checkpoints/`, `.cache/`, and `.wandb/`.
 
+`scripts/env.sh` keeps project and cluster cache state under the repo by
+default:
+
+```text
+data/                 generated train/validation/eval datasets
+checkpoints/          veRL trainer checkpoints
+.cache/models/        downloaded Hugging Face model snapshots
+.cache/huggingface/   HF hub/assets/xet/transformers/datasets caches
+.cache/ray/           Ray temp state
+.cache/pip/           pip/uv pip wheel cache
+.cache/torch/         Torch cache
+.cache/torch_extensions/
+.cache/triton/        Triton kernel cache
+.cache/nv/            CUDA JIT cache
+.cache/vllm/          vLLM config/cache root
+.cache/sglang/        SGLang cache root if honored by the installed version
+.wandb/               W&B run/cache/config state
+artifacts/wandb/      W&B artifacts
+```
+
 ## Cluster Environment
 
 Copy the example env file and edit cluster-specific values:

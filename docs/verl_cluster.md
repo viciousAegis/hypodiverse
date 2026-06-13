@@ -282,7 +282,7 @@ WANDB_LOGGER='["console","wandb"]'
 Checkpoints go to:
 
 ```text
-checkpoints/${PROJECT_NAME}/${EXPERIMENT_NAME}
+${CHECKPOINT_ROOT}/${PROJECT_NAME}/${EXPERIMENT_NAME}
 ```
 
 ## 6. Curriculum

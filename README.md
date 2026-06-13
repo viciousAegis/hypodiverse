@@ -102,7 +102,7 @@ The cluster script keeps project caches local by default:
 ```text
 .cache/huggingface
 .cache/ray
+data/verl
 .wandb
 checkpoints
-data/verl
 ```
