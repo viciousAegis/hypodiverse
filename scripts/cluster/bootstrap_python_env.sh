@@ -55,6 +55,7 @@ required = [
 ]
 if backend == "sglang":
     required.append("sglang")
+    required.append("sglang.srt")
 elif backend == "vllm":
     required.append("vllm")
 

@@ -90,6 +90,9 @@ fi
 
 retry_cmd uv pip install -e "$VERL_SRC[sglang]"
 
+SGLANG_SPEC="${SGLANG_SPEC:-sglang==0.5.8}"
+retry_cmd uv pip install "$SGLANG_SPEC"
+
 python - <<'PY'
 import importlib.util
 import torch
@@ -97,6 +100,8 @@ import torch
 for name in ["verl", "ray", "sglang", "torch"]:
     if importlib.util.find_spec(name) is None:
         raise SystemExit(f"missing {name}")
+if importlib.util.find_spec("sglang.srt") is None:
+    raise SystemExit("missing sglang.srt runtime module")
 
 print("torch", torch.__version__)
 print("torch cuda available", torch.cuda.is_available())

@@ -95,6 +95,23 @@ repo-local uv caches and retries, so completed downloads are reused:
 UV_HTTP_TIMEOUT=300 UV_INSTALL_RETRIES=5 bash scripts/cluster/install_verl_stack.sh
 ```
 
+If uv prints warnings that `sglang` has no extras named `openai` or `srt`, treat
+them as dependency-metadata warnings unless the install fails. The installer and
+Slurm bootstrap explicitly check for the real SGLang runtime module
+`sglang.srt`.
+
+If `import sglang` fails after those warnings, either the install aborted before
+SGLang was installed or you are testing outside `$VENV_DIR`. From the repo root:
+
+```bash
+source "$VENV_DIR/bin/activate"
+uv pip install "$SGLANG_SPEC"
+python -c "import sglang, sglang.srt; print('sglang ok')"
+```
+
+The default is `SGLANG_SPEC=sglang==0.5.8`, matching the version veRL currently
+resolves in this setup.
+
 ## Ollama Baselines
 
 Keep Ollama model files inside the repo:
