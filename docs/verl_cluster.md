@@ -37,6 +37,12 @@ already created a bad 3.13 venv, rebuild it with:
 RECREATE_VENV=1 bash scripts/cluster/install_verl_stack.sh
 ```
 
+For slow cluster networking during dependency downloads:
+
+```bash
+UV_HTTP_TIMEOUT=300 UV_INSTALL_RETRIES=5 bash scripts/cluster/install_verl_stack.sh
+```
+
 Algorithm selection is routed through `DISCOVERY_ALGO`. The default is vanilla
 veRL-compatible GRPO:
 

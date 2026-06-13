@@ -88,6 +88,13 @@ veRL's [sglang] extra, which installs the SGLang backend
 Override `PYTORCH_INDEX_URL`, `TORCH_SPEC`, `VERL_SRC`, or `INSTALL_TORCH` in
 `.env` if the cluster image already provides a compatible CUDA stack.
 
+If a large wheel download times out, rerun the same command. The installer uses
+repo-local uv caches and retries, so completed downloads are reused:
+
+```bash
+UV_HTTP_TIMEOUT=300 UV_INSTALL_RETRIES=5 bash scripts/cluster/install_verl_stack.sh
+```
+
 ## Ollama Baselines
 
 Keep Ollama model files inside the repo:

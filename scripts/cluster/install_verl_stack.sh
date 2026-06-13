@@ -34,6 +34,23 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
+retry_cmd() {
+  local attempt=1
+  local attempts="${UV_INSTALL_RETRIES:-3}"
+  local delay_s="${UV_INSTALL_RETRY_DELAY_S:-20}"
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    if [[ "$attempt" -ge "$attempts" ]]; then
+      return 1
+    fi
+    echo "Command failed; retrying in $((delay_s * attempt))s ($attempt/$attempts): $*" >&2
+    sleep "$((delay_s * attempt))"
+    attempt="$((attempt + 1))"
+  done
+}
+
 PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
 if [[ -x "$VENV_DIR/bin/python" ]]; then
   VENV_PYTHON_VERSION="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
@@ -48,7 +65,7 @@ if [[ -x "$VENV_DIR/bin/python" ]]; then
   fi
 fi
 
-uv sync --python "$PYTHON_VERSION" --extra verl
+retry_cmd uv sync --python "$PYTHON_VERSION" --extra verl
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
@@ -58,10 +75,10 @@ TORCH_SPEC="${TORCH_SPEC:-torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1}"
 
 if [[ "${INSTALL_TORCH:-1}" == "1" ]]; then
   # shellcheck disable=SC2086
-  uv pip install --index-url "$PYTORCH_INDEX_URL" $TORCH_SPEC
+  retry_cmd uv pip install --index-url "$PYTORCH_INDEX_URL" $TORCH_SPEC
 fi
 
-uv pip install -U "ray[data,train,tune,serve]"
+retry_cmd uv pip install -U "ray[data,train,tune,serve]"
 
 VERL_SRC="${VERL_SRC:-$CACHE_ROOT/src/verl}"
 if [[ ! -d "$VERL_SRC/.git" ]]; then
@@ -71,7 +88,7 @@ else
   git -C "$VERL_SRC" pull --ff-only
 fi
 
-uv pip install -e "$VERL_SRC[sglang]"
+retry_cmd uv pip install -e "$VERL_SRC[sglang]"
 
 python - <<'PY'
 import importlib.util
