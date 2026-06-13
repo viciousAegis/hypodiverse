@@ -18,6 +18,47 @@ UV_CACHE_DIR=.uv-cache uv sync --extra verl
 
 The repo ignores `.uv-cache/`, `.uv-tools/`, `.venv/`, `.ruff_cache/`, `data/`, `checkpoints/`, `.cache/`, and `.wandb/`.
 
+## Cluster Environment
+
+Copy the example env file and edit cluster-specific values:
+
+```bash
+cp .env.example .env
+```
+
+The Slurm scripts source `scripts/env.sh`, which loads `.env` with shell xtrace
+disabled so secrets such as `WANDB_API_KEY` are not printed into logs.
+
+If `$VENV_DIR` does not exist, the first Slurm run runs:
+
+```bash
+uv sync --extra verl
+```
+
+That bootstraps this project and light Parquet/W&B dependencies. It does not
+silently install the full CUDA veRL/SGLang/vLLM training stack; the bootstrap
+checks for `verl`, `torch`, `ray`, and the selected rollout backend and fails
+early with a missing-package list if they are absent.
+
+Install that training stack once before submitting GRPO jobs:
+
+```bash
+bash scripts/cluster/install_verl_stack.sh
+```
+
+The helper uses `uv pip install` inside `$VENV_DIR`. Its defaults target the
+current Ampere/CUDA 12.1 Slurm scripts:
+
+```text
+torch==2.5.1 from the cu121 PyTorch wheel index
+ray[data,train,tune,serve]
+veRL from a source checkout under $CACHE_ROOT/src/verl
+veRL's [sglang] extra, which installs the SGLang backend
+```
+
+Override `PYTORCH_INDEX_URL`, `TORCH_SPEC`, `VERL_SRC`, or `INSTALL_TORCH` in
+`.env` if the cluster image already provides a compatible CUDA stack.
+
 ## Ollama Baselines
 
 Keep Ollama model files inside the repo:

@@ -12,3 +12,7 @@ checkpoints/
 .cache/
 .wandb/
 .DS_Store
+.env
+artifacts/
+logs/*
+!logs/.gitkeep

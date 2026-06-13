@@ -3,6 +3,11 @@ set -xeuo pipefail
 
 # Run from the project root on the cluster.
 
+if [[ -f scripts/env.sh ]]; then
+  # shellcheck disable=SC1091
+  source scripts/env.sh
+fi
+
 export PYTHONUNBUFFERED=1
 export HF_HOME="${HF_HOME:-$PWD/.cache/huggingface}"
 export TRANSFORMERS_CACHE="${TRANSFORMERS_CACHE:-$HF_HOME/transformers}"

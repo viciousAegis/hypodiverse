@@ -4,6 +4,13 @@ set -xeuo pipefail
 # Cheap end-to-end cluster check: dataset generation, SGLang rollout, GRPO update,
 # checkpointing, validation, and W&B logging.
 
+if [[ -f scripts/env.sh ]]; then
+  set +x
+  # shellcheck disable=SC1091
+  source scripts/env.sh
+  set -x
+fi
+
 DATASET_CONFIG="${DATASET_CONFIG:-configs/verl/datasets/scattered_smoke.yaml}"
 if [[ "${PREPARE_DATASETS:-1}" == "1" ]]; then
   DATASET_CONFIG="$DATASET_CONFIG" scripts/cluster/prepare_verl_datasets.sh
@@ -13,7 +20,7 @@ export DISCOVERY_ALGO="${DISCOVERY_ALGO:-grpo}"
 export MODEL_PATH="${MODEL_PATH:-Qwen/Qwen3-4B}"
 export TRAIN_FILE="${TRAIN_FILE:-data/verl/scattered_causal_smoke_train.parquet}"
 export VAL_FILE="${VAL_FILE:-data/verl/scattered_causal_smoke_val.parquet}"
-export NGPUS_PER_NODE="${NGPUS_PER_NODE:-4}"
+export NGPUS_PER_NODE="${NGPUS_PER_NODE:-2}"
 export TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-32}"
 export PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-16}"
 export ROLLOUT_N="${ROLLOUT_N:-4}"

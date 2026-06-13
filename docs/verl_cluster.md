@@ -8,6 +8,27 @@ dataset row -> EnvSpec -> DiscoveryEnv -> veRL AgentLoop -> SGLang rollout -> fi
 
 The default script assumes one node with several GPUs, SGLang rollouts, GRPO, and W&B logging.
 
+Before submitting, copy `.env.example` to `.env` and edit cluster paths/secrets:
+
+```bash
+cp .env.example .env
+```
+
+The Slurm scripts load the cluster modules, source `scripts/env.sh`, create
+repo-local cache directories, optionally download the model into `$MODEL_ROOT`,
+and verify the Python training stack before launching veRL. If `$VENV_DIR` is
+missing, they run `uv sync --extra verl`; this initializes the project venv but
+does not replace a proper veRL/SGLang CUDA install.
+
+Install the CUDA training stack once:
+
+```bash
+bash scripts/cluster/install_verl_stack.sh
+```
+
+That script installs PyTorch, Ray, and veRL with the SGLang extra into
+`$VENV_DIR` using `uv pip install`.
+
 Algorithm selection is routed through `DISCOVERY_ALGO`. The default is vanilla
 veRL-compatible GRPO:
 

@@ -4,6 +4,13 @@ set -xeuo pipefail
 # First meaningful learning run. This targets about 256 actor optimizer updates
 # with the default 4-GPU settings.
 
+if [[ -f scripts/env.sh ]]; then
+  set +x
+  # shellcheck disable=SC1091
+  source scripts/env.sh
+  set -x
+fi
+
 DATASET_CONFIG="${DATASET_CONFIG:-configs/verl/datasets/scattered_pilot.yaml}"
 if [[ "${PREPARE_DATASETS:-1}" == "1" ]]; then
   DATASET_CONFIG="$DATASET_CONFIG" scripts/cluster/prepare_verl_datasets.sh

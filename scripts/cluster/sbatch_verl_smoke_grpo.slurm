@@ -1,24 +1,74 @@
-#!/usr/bin/env bash
-#SBATCH --job-name=sd-smoke-grpo
+#!/bin/bash
+#SBATCH -J sd-grpo-smoke
+#SBATCH -A MLMI-as3727-SL2-GPU
+#SBATCH --output=logs/%x-%j.out
+#SBATCH --error=logs/%x-%j.err
 #SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=32
-#SBATCH --mem=0
+#SBATCH --ntasks=1
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=24
+#SBATCH --mem=128G
 #SBATCH --time=02:00:00
-#SBATCH --output=logs/slurm/%x-%j.out
-#SBATCH --error=logs/slurm/%x-%j.err
+#SBATCH --mail-type=NONE
+#SBATCH -p ampere
 
-set -xeuo pipefail
+set -euo pipefail
+set -x
 
-# Submit from the project root:
-#   sbatch scripts/cluster/sbatch_verl_smoke_grpo.slurm
+. /etc/profile.d/modules.sh
+module purge
+module load rhel8/default-amp
+module load gcc/11
+module load cuda/12.1
 
-cd "${SLURM_SUBMIT_DIR:-$PWD}"
-mkdir -p logs/slurm
+REPO_DIR="${REPO_DIR:-/home/as3727/rds/hpc-work/thesis}"
+cd "$REPO_DIR"
+mkdir -p logs
+
+set +x
+# shellcheck disable=SC1091
+source scripts/env.sh
+set -x
+cd "$REPO_DIR"
+
+export CUDA_HOME="${CUDA_HOME:-/usr/local/software/cuda/12.1}"
+export CUDA_PATH="$CUDA_HOME"
+export PATH="/home/as3727/.local/bin:$CUDA_HOME/bin:$PATH"
+GCC_LIBSTDCPP_DIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
+export LD_LIBRARY_PATH="$GCC_LIBSTDCPP_DIR:$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
+unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH CUDA_INC_PATH
+
+bash scripts/cluster/bootstrap_python_env.sh
+# shellcheck disable=SC1091
+source "$VENV_DIR/bin/activate"
+
+MODEL_ID="${MODEL_ID:-Qwen/Qwen3-4B}"
+MODEL_BASENAME="${MODEL_BASENAME:-${MODEL_ID##*/}}"
+MODEL_PATH="${MODEL_PATH:-$MODEL_ROOT/$MODEL_BASENAME}"
+if [[ ! -f "$MODEL_PATH/config.json" ]]; then
+  if [[ "${DOWNLOAD_MODEL:-1}" == "1" ]]; then
+    mkdir -p "$MODEL_PATH"
+    if command -v hf >/dev/null 2>&1; then
+      hf download "$MODEL_ID" --local-dir "$MODEL_PATH"
+    elif command -v huggingface-cli >/dev/null 2>&1; then
+      huggingface-cli download "$MODEL_ID" --local-dir "$MODEL_PATH"
+    else
+      echo "Neither hf nor huggingface-cli is available for model download." >&2
+      exit 1
+    fi
+  else
+    MODEL_PATH="$MODEL_ID"
+  fi
+fi
+export MODEL_PATH
+
+export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
+export WANDB_NAME="${WANDB_NAME:-sd-grpo-smoke-${SLURM_JOB_ID:-manual}}"
+export PROJECT_NAME="${PROJECT_NAME:-$WANDB_PROJECT}"
+export EXPERIMENT_NAME="${EXPERIMENT_NAME:-$WANDB_NAME}"
 
 export NNODES="${SLURM_NNODES:-1}"
-export NGPUS_PER_NODE="${NGPUS_PER_NODE:-4}"
-export EXPERIMENT_NAME="${EXPERIMENT_NAME:-scattered_smoke_qwen3_4b_${SLURM_JOB_ID:-manual}}"
+export NGPUS_PER_NODE="${NGPUS_PER_NODE:-${SLURM_GPUS_ON_NODE:-2}}"
+export ROLLOUT_TP="${ROLLOUT_TP:-${TP:-1}}"
 
 scripts/cluster/run_verl_smoke_grpo.sh "$@"
