@@ -7,6 +7,8 @@ prepare_datasets: 1
 discovery_algo: grpo
 model_id: Qwen/Qwen3-4B
 download_model: 1
+attn_implementation: sdpa
+use_remove_padding: "False"
 train_file: data/verl/scattered_causal_pilot_train.parquet
 val_file: data/verl/scattered_causal_pilot_val.parquet
 

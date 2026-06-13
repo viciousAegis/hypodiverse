@@ -77,6 +77,8 @@ ENTROPY_COEFF=${ENTROPY_COEFF:-0}
 ROLLOUT_TP=${ROLLOUT_TP:-1}
 ROLLOUT_GPU_MEM_UTIL=${ROLLOUT_GPU_MEM_UTIL:-0.55}
 ROLLOUT_N=${ROLLOUT_N:-4}
+ATTN_IMPLEMENTATION=${ATTN_IMPLEMENTATION:-sdpa}
+USE_REMOVE_PADDING=${USE_REMOVE_PADDING:-False}
 TOTAL_EPOCHS=${TOTAL_EPOCHS:-1}
 SAVE_FREQ=${SAVE_FREQ:-20}
 TEST_FREQ=${TEST_FREQ:-5}
@@ -104,7 +106,8 @@ DATA=(
 
 MODEL=(
   actor_rollout_ref.model.path="${MODEL_PATH}"
-  actor_rollout_ref.model.use_remove_padding=True
+  actor_rollout_ref.model.override_config.attn_implementation="${ATTN_IMPLEMENTATION}"
+  actor_rollout_ref.model.use_remove_padding="${USE_REMOVE_PADDING}"
   actor_rollout_ref.model.enable_gradient_checkpointing=True
 )
 

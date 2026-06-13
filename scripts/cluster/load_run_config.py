@@ -17,6 +17,8 @@ KEY_MAP = {
     "model_path": "MODEL_PATH",
     "model_basename": "MODEL_BASENAME",
     "download_model": "DOWNLOAD_MODEL",
+    "attn_implementation": "ATTN_IMPLEMENTATION",
+    "use_remove_padding": "USE_REMOVE_PADDING",
     "train_file": "TRAIN_FILE",
     "val_file": "VAL_FILE",
     "val_files": "VAL_FILES",
