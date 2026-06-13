@@ -34,7 +34,21 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
-uv sync --extra verl
+PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
+if [[ -x "$VENV_DIR/bin/python" ]]; then
+  VENV_PYTHON_VERSION="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  if [[ "$VENV_PYTHON_VERSION" != "$PYTHON_VERSION" ]]; then
+    if [[ "${RECREATE_VENV:-0}" == "1" ]]; then
+      rm -rf "$VENV_DIR"
+    else
+      echo "Existing venv uses Python $VENV_PYTHON_VERSION, but PYTHON_VERSION=$PYTHON_VERSION." >&2
+      echo "Set RECREATE_VENV=1 to rebuild $VENV_DIR, or remove it manually." >&2
+      exit 1
+    fi
+  fi
+fi
+
+uv sync --python "$PYTHON_VERSION" --extra verl
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"

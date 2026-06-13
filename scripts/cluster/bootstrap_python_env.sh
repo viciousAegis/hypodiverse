@@ -13,6 +13,16 @@ elif [[ -f scripts/env.sh ]]; then
   source scripts/env.sh
 fi
 
+PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
+if [[ -x "$VENV_DIR/bin/python" ]]; then
+  VENV_PYTHON_VERSION="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+  if [[ "$VENV_PYTHON_VERSION" != "$PYTHON_VERSION" ]]; then
+    echo "Existing venv uses Python $VENV_PYTHON_VERSION, but PYTHON_VERSION=$PYTHON_VERSION." >&2
+    echo "Run: RECREATE_VENV=1 bash scripts/cluster/install_verl_stack.sh" >&2
+    exit 1
+  fi
+fi
+
 if [[ ! -x "$VENV_DIR/bin/python" ]]; then
   if [[ "${BOOTSTRAP_UV_ENV:-1}" != "1" ]]; then
     echo "Missing venv at $VENV_DIR and BOOTSTRAP_UV_ENV is not 1." >&2
@@ -22,7 +32,7 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
     echo "Missing uv. Install uv or create $VENV_DIR before submitting." >&2
     exit 1
   fi
-  uv sync --extra verl
+  uv sync --python "$PYTHON_VERSION" --extra verl
 fi
 
 # shellcheck disable=SC1091

@@ -29,6 +29,14 @@ bash scripts/cluster/install_verl_stack.sh
 That script installs PyTorch, Ray, and veRL with the SGLang extra into
 `$VENV_DIR` using `uv pip install`.
 
+Use `PYTHON_VERSION=3.11` for the training venv. The pinned CUDA 12.1 Torch
+stack does not have compatible `torchvision` wheels for Python 3.13. If uv
+already created a bad 3.13 venv, rebuild it with:
+
+```bash
+RECREATE_VENV=1 bash scripts/cluster/install_verl_stack.sh
+```
+
 Algorithm selection is routed through `DISCOVERY_ALGO`. The default is vanilla
 veRL-compatible GRPO:
 

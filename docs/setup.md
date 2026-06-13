@@ -52,13 +52,22 @@ disabled so secrets such as `WANDB_API_KEY` are not printed into logs.
 If `$VENV_DIR` does not exist, the first Slurm run runs:
 
 ```bash
-uv sync --extra verl
+uv sync --python "$PYTHON_VERSION" --extra verl
 ```
 
 That bootstraps this project and light Parquet/W&B dependencies. It does not
 silently install the full CUDA veRL/SGLang/vLLM training stack; the bootstrap
 checks for `verl`, `torch`, `ray`, and the selected rollout backend and fails
 early with a missing-package list if they are absent.
+
+Cluster training defaults to `PYTHON_VERSION=3.11`. Do not use Python 3.13 for
+the CUDA training stack: the pinned PyTorch/torchvision CUDA 12.1 wheels do not
+provide `cp313` builds. If a previous failed install created a Python 3.13 venv,
+rebuild it explicitly:
+
+```bash
+RECREATE_VENV=1 bash scripts/cluster/install_verl_stack.sh
+```
 
 Install that training stack once before submitting GRPO jobs:
 
