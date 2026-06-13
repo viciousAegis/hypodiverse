@@ -13,7 +13,7 @@ elif [[ -f scripts/env.sh ]]; then
   source scripts/env.sh
 fi
 
-PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 if [[ -x "$VENV_DIR/bin/python" ]]; then
   VENV_PYTHON_VERSION="$("$VENV_DIR/bin/python" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
   if [[ "$VENV_PYTHON_VERSION" != "$PYTHON_VERSION" ]]; then
