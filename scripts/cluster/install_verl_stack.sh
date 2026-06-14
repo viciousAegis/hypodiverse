@@ -69,6 +69,8 @@ retry_cmd uv sync --python "$PYTHON_VERSION" --extra verl
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+# shellcheck disable=SC1091
+source scripts/cluster/prepend_venv_cuda_libs.sh
 
 retry_cmd uv pip install -U "ray[data,train,tune,serve]"
 
@@ -84,6 +86,10 @@ retry_cmd uv pip install -e "$VERL_SRC[sglang]"
 
 SGLANG_SPEC="${SGLANG_SPEC:-sglang==0.5.8}"
 retry_cmd uv pip install "$SGLANG_SPEC"
+
+# New installs may add nvidia/*/lib directories.
+# shellcheck disable=SC1091
+source scripts/cluster/prepend_venv_cuda_libs.sh
 
 FLASH_ATTN_SPEC="${FLASH_ATTN_SPEC:-flash-attn}"
 if [[ "${INSTALL_FLASH_ATTN:-0}" == "1" ]]; then

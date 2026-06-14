@@ -42,6 +42,8 @@ unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH CUDA_INC_PATH
 bash scripts/cluster/bootstrap_python_env.sh
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+# shellcheck disable=SC1091
+source scripts/cluster/prepend_venv_cuda_libs.sh
 
 export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
 export PROJECT_NAME="${PROJECT_NAME:-$WANDB_PROJECT}"

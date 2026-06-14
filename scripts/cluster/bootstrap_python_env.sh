@@ -37,6 +37,13 @@ fi
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+if [[ -f "${REPO_DIR:-$PWD}/scripts/cluster/prepend_venv_cuda_libs.sh" ]]; then
+  # shellcheck disable=SC1091
+  source "${REPO_DIR:-$PWD}/scripts/cluster/prepend_venv_cuda_libs.sh"
+elif [[ -f scripts/cluster/prepend_venv_cuda_libs.sh ]]; then
+  # shellcheck disable=SC1091
+  source scripts/cluster/prepend_venv_cuda_libs.sh
+fi
 
 python - <<'PY'
 import importlib.util
