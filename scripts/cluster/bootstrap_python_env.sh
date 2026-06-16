@@ -32,6 +32,8 @@ if [[ ! -x "$VENV_DIR/bin/python" ]]; then
     echo "Missing uv. Install uv or create $VENV_DIR before submitting." >&2
     exit 1
   fi
+  export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-only-managed}"
+  uv python install "$PYTHON_VERSION"
   uv sync --python "$PYTHON_VERSION" --extra verl
 fi
 
@@ -44,6 +46,24 @@ elif [[ -f scripts/cluster/prepend_venv_cuda_libs.sh ]]; then
   # shellcheck disable=SC1091
   source scripts/cluster/prepend_venv_cuda_libs.sh
 fi
+
+python - <<'PY'
+import pathlib
+import sys
+import sysconfig
+
+header = pathlib.Path(sysconfig.get_paths()["include"]) / "Python.h"
+if not header.exists():
+    print(f"Missing Python development header: {header}", file=sys.stderr)
+    print(
+        "SGLang/Triton needs Python.h at runtime for JIT helper compilation. "
+        "Rebuild the venv with: UV_PYTHON_PREFERENCE=only-managed "
+        "RECREATE_VENV=1 bash scripts/cluster/install_verl_stack.sh",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(f"Python.h ok: {header}")
+PY
 
 python - <<'PY'
 import importlib.util

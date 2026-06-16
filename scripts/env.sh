@@ -51,6 +51,7 @@ export VENV_DIR="${VENV_DIR:-$REPO_DIR/.venv}"
 
 export UV_CACHE_DIR="${UV_CACHE_DIR:-$REPO_DIR/.uv-cache}"
 export UV_TOOL_DIR="${UV_TOOL_DIR:-$REPO_DIR/.uv-tools}"
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$CACHE_ROOT/uv/python}"
 export UV_HTTP_TIMEOUT="${UV_HTTP_TIMEOUT:-180}"
 export UV_HTTP_RETRIES="${UV_HTTP_RETRIES:-5}"
 export UV_INSTALL_RETRIES="${UV_INSTALL_RETRIES:-3}"
@@ -91,6 +92,7 @@ mkdir -p \
   "$MODEL_ROOT" \
   "$UV_CACHE_DIR" \
   "$UV_TOOL_DIR" \
+  "$UV_PYTHON_INSTALL_DIR" \
   "$XDG_CACHE_HOME" \
   "$PIP_CACHE_DIR" \
   "$HF_HOME" \

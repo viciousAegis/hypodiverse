@@ -34,6 +34,8 @@ if ! command -v uv >/dev/null 2>&1; then
   exit 1
 fi
 
+export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-only-managed}"
+
 retry_cmd() {
   local attempt=1
   local attempts="${UV_INSTALL_RETRIES:-3}"
@@ -51,6 +53,26 @@ retry_cmd() {
   done
 }
 
+check_python_headers() {
+  "$VENV_DIR/bin/python" - <<'PY'
+import pathlib
+import sys
+import sysconfig
+
+header = pathlib.Path(sysconfig.get_paths()["include"]) / "Python.h"
+if not header.exists():
+    print(f"Missing Python development header: {header}", file=sys.stderr)
+    print(
+        "Rebuild the venv with uv's managed Python: "
+        "UV_PYTHON_PREFERENCE=only-managed RECREATE_VENV=1 "
+        "bash scripts/cluster/install_verl_stack.sh",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+print(f"Python.h ok: {header}")
+PY
+}
+
 PYTHON_VERSION="${PYTHON_VERSION:-3.12}"
 if [[ "${RECREATE_VENV:-0}" == "1" && -d "$VENV_DIR" ]]; then
   rm -rf "$VENV_DIR"
@@ -65,10 +87,12 @@ if [[ -x "$VENV_DIR/bin/python" ]]; then
   fi
 fi
 
+retry_cmd uv python install "$PYTHON_VERSION"
 retry_cmd uv sync --python "$PYTHON_VERSION" --extra verl
 
 # shellcheck disable=SC1091
 source "$VENV_DIR/bin/activate"
+check_python_headers
 # shellcheck disable=SC1091
 source scripts/cluster/prepend_venv_cuda_libs.sh
 
