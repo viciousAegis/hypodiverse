@@ -75,6 +75,7 @@ required = [
     "scattered_discovery",
     "pandas",
     "pyarrow",
+    "datasets",
     "wandb",
     "verl",
     "torch",

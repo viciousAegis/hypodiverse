@@ -110,6 +110,7 @@ retry_cmd uv pip install -e "$VERL_SRC[sglang]"
 
 SGLANG_SPEC="${SGLANG_SPEC:-sglang==0.5.8}"
 retry_cmd uv pip install "$SGLANG_SPEC"
+retry_cmd uv pip install "pyarrow>=16.0.0,<21.0.0"
 
 # New installs may add nvidia/*/lib directories.
 # shellcheck disable=SC1091
@@ -125,8 +126,10 @@ python - <<'PY'
 import os
 import importlib.util
 import torch
+import pyarrow
+import datasets
 
-for name in ["verl", "ray", "sglang", "torch"]:
+for name in ["verl", "ray", "sglang", "torch", "datasets", "pyarrow"]:
     if importlib.util.find_spec(name) is None:
         raise SystemExit(f"missing {name}")
 if importlib.util.find_spec("sglang.srt") is None:
@@ -135,6 +138,8 @@ if os.environ.get("INSTALL_FLASH_ATTN") == "1" and importlib.util.find_spec("fla
     raise SystemExit("missing flash_attn")
 
 print("torch", torch.__version__)
+print("pyarrow", pyarrow.__version__)
+print("datasets", datasets.__version__)
 print("torch cuda available", torch.cuda.is_available())
 if torch.cuda.is_available():
     print("cuda device count", torch.cuda.device_count())
