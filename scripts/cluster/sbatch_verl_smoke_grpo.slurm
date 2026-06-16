@@ -52,4 +52,14 @@ export NNODES="${SLURM_NNODES:-1}"
 export NGPUS_PER_NODE="${NGPUS_PER_NODE:-${SLURM_GPUS_ON_NODE:-2}}"
 export ROLLOUT_TP="${ROLLOUT_TP:-${TP:-1}}"
 
+set +e
 scripts/cluster/run_verl_smoke_grpo.sh "$@"
+STATUS=$?
+
+echo "Ray temp candidates:"
+find /tmp -maxdepth 3 -type d -name 'session_*' -path '*ray*' 2>/dev/null | head -20
+
+echo "Ray recent errors:"
+find /tmp -maxdepth 6 -type f \( -name 'worker-*.err' -o -name 'python-core-worker-*.log' -o -name 'raylet.err' \) -mmin -120 -print -exec tail -200 {} \; 2>/dev/null
+
+exit "$STATUS"
