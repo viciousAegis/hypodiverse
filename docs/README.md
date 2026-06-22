@@ -9,6 +9,7 @@ For the config directory layout itself, see [../configs/README.md](../configs/RE
 - [Setup](setup.md): local dependencies, repo-local caches, Ollama, and W&B.
 - [Dataset Generation](datasets.md): YAML schema, CLI flags, generated row format, and Parquet/JSONL outputs.
 - [Scenario Examples](scenarios.md): ready-to-copy examples for easy/hard scattered causal, set protocol, noisy evidence, and mixed training files.
+- [Scattered Discovery Environment](scattered_discovery_env.md): what the synthetic env is, how dispersion controls diversity, and how path terminals extend to motifs.
 - [Local Runs](local_runs.md): Ollama baselines, generic interactive smoke tests, and the scattered-causal browser viewer.
 - [Evaluation Runs](evaluation.md): local and cluster eval over shared EnvSpec rows.
 - [veRL Cluster Runs](verl_cluster.md): dataset prep, GRPO launch, SGLang rollout settings, W&B, and common overrides.

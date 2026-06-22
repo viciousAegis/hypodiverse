@@ -93,3 +93,60 @@ answers. Those claims are not factually false; they are incomplete under the
 environment's final-answer schema.
 
 For pass@K-style eval, keep `protocol: single` and set `ROLLOUTS_PER_SPEC=K`. For single-rollout K-answer eval, use `protocol: set` and `max_commit: K` in the eval dataset.
+
+## Scattered Pilot Calibration
+
+Before launching the pilot GRPO run, run base-model calibration evals. These
+jobs start an SGLang server inside the Slurm allocation, run the eval, then stop
+the server.
+
+Run the easy smoke validation first:
+
+```bash
+sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_smoke_base_single.yaml \
+  scripts/cluster/sbatch_scattered_eval.slurm
+```
+
+Then run the mixed pilot subset:
+
+```bash
+sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_single_subset.yaml \
+  scripts/cluster/sbatch_scattered_eval.slurm
+```
+
+If the single-rollout pilot subset has weak but nonzero signal, run pass@4:
+
+```bash
+sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_subset.yaml \
+  scripts/cluster/sbatch_scattered_eval.slurm
+```
+
+Each run writes:
+
+```text
+results/envspec_eval/<run_name>/
+  config.json
+  episodes.jsonl
+  summary.json
+  summary_by_task.json
+```
+
+Use `summary.json` for aggregate difficulty and `summary_by_task.json` to check
+which task regions are learnable. The stratified summary is broken out by:
+
+```text
+dispersion
+num_branches
+branch_depth
+distractors_per_node
+base_budget
+```
+
+Interpretation:
+
+- High `parse_failures_mean`: prompt/action-format problem.
+- High `invalid_actions_mean`: admissibility/search problem.
+- High `non_final_count_mean`: model finds true partials but misses terminal paths.
+- High `unsupported_count_mean`: model commits without enough evidence.
+- Low single-rollout signal but nonzero pass@4: GRPO has something to amplify.
+- Near-zero pass@4: simplify or shape before running the pilot.

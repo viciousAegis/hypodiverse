@@ -1,0 +1,27 @@
+# Base-model calibration on the easy scattered-causal smoke validation split.
+# Use this first to verify action syntax, evidence use, and nonzero valid commits.
+
+dataset_config: configs/verl/datasets/scattered_smoke.yaml
+prepare_datasets: 1
+
+model_id: Qwen/Qwen3-4B
+download_model: 1
+eval_file: data/verl/scattered_causal_smoke_val.parquet
+output_dir: results/envspec_eval
+run_name: scattered_smoke_base_single
+
+max_examples: 80
+rollouts_per_spec: 1
+max_steps: 6
+max_response_length: 4096
+temperature: 0.6
+top_p: 0.95
+request_timeout_s: 600
+transcripts: 0
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.55
+sglang_extra_args: ""

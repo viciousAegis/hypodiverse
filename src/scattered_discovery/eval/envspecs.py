@@ -140,6 +140,43 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _task_value(record: dict[str, Any], key: str) -> Any:
+    task = record.get("task")
+    if not isinstance(task, dict):
+        return None
+    if key == "dispersion":
+        return task.get("dispersion")
+    world = task.get("world")
+    if isinstance(world, dict):
+        return world.get(key)
+    return None
+
+
+def summarize_by_task_field(
+    records: list[dict[str, Any]], field: str
+) -> dict[str, dict[str, Any]]:
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        value = _task_value(record, field)
+        label = "missing" if value is None else str(value)
+        groups.setdefault(label, []).append(record)
+    return {
+        label: summarize_records(group)
+        for label, group in sorted(groups.items(), key=lambda item: item[0])
+    }
+
+
+def stratified_summaries(records: list[dict[str, Any]]) -> dict[str, Any]:
+    fields = [
+        "dispersion",
+        "num_branches",
+        "branch_depth",
+        "distractors_per_node",
+        "base_budget",
+    ]
+    return {field: summarize_by_task_field(records, field) for field in fields}
+
+
 def _maybe_start_wandb(args: argparse.Namespace):
     if not args.wandb_project:
         return None
@@ -198,6 +235,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                 record["spec_index"] = spec_index
                 record["rollout_index"] = rollout_index
                 record["env_type"] = spec["env_type"]
+                record["task"] = spec.get("task", {})
                 record["model"] = args.model
                 records.append(record)
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
@@ -233,6 +271,10 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     )
     (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
+    (output_dir / "summary_by_task.json").write_text(
+        json.dumps(stratified_summaries(records), indent=2, sort_keys=True),
+        encoding="utf-8",
     )
     (output_dir / "config.json").write_text(
         json.dumps(vars(args), indent=2, sort_keys=True), encoding="utf-8"
