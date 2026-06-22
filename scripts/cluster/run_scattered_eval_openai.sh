@@ -11,6 +11,11 @@ if [[ -f scripts/env.sh ]]; then
   set -x
 fi
 
+export CUDA_HOME="${CLUSTER_CUDA_HOME:-/usr/local/software/cuda/12.1}"
+export CUDA_PATH="$CUDA_HOME"
+export PATH="${CUDA_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+
 EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/scattered_smoke_base_single.yaml}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
@@ -77,6 +82,10 @@ if [[ "${SERVE_MODEL:-1}" == "1" ]]; then
   SGLANG_TP="${SGLANG_TP:-1}"
   SGLANG_MEM_FRACTION_STATIC="${SGLANG_MEM_FRACTION_STATIC:-0.55}"
   read -r -a SGLANG_EXTRA <<< "${SGLANG_EXTRA_ARGS:-}"
+  echo "Starting SGLang with CUDA_HOME=$CUDA_HOME"
+  echo "FlashInfer cache: ${FLASHINFER_CACHE_DIR:-unset}"
+  command -v nvcc || true
+  nvcc --version || true
   "$PYTHON_BIN" -m sglang.launch_server \
     --model-path "$MODEL_PATH" \
     --host "$SGLANG_HOST" \

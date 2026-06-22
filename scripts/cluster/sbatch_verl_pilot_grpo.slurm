@@ -32,7 +32,7 @@ source scripts/env.sh
 set -x
 cd "$REPO_DIR"
 
-export CUDA_HOME="${CUDA_HOME:-/usr/local/software/cuda/12.1}"
+export CUDA_HOME="${CLUSTER_CUDA_HOME:-/usr/local/software/cuda/12.1}"
 export CUDA_PATH="$CUDA_HOME"
 export PATH="${LOCAL_BIN_DIR:-$HOME/.local/bin}:$CUDA_HOME/bin:$PATH"
 GCC_LIBSTDCPP_DIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
