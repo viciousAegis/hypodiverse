@@ -72,6 +72,8 @@ class OpenAICompatibleBackend(ChatBackend):
         message = choices[0].get("message") or {}
         content = message.get("content", "")
         thinking = message.get("reasoning_content", message.get("thinking", ""))
+        if thinking is None:
+            thinking = ""
         if not isinstance(content, str) or not isinstance(thinking, str):
             raise RuntimeError(f"Unexpected chat completion message: {message!r}")
         return ChatResponse(content=content, thinking=thinking)

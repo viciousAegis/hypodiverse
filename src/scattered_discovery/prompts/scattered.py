@@ -15,15 +15,14 @@ Do not put explanations, plans, or multiple actions in the final answer content.
 The visible response must be one of:
 ACTION: INTERVENE xNN
 ACTION: TEST edge(xNN,xMM)
-ACTION: TEST path(xNN,xMM,xKK)
 ACTION: COMMIT path(xNN,xMM,xKK,...)
 ACTION: COMMIT [path(...); path(...)]
 
 Rules:
 - Variables are opaque symbols. Do not invent variables that are not known.
 - INTERVENE on a known variable exposes measured downstream effects and may reveal new variables.
-- TEST a generated DSL hypothesis to gather evidence.
-- Final credit requires a complete path of the required length, backed by evidence gathered in this episode.
+- TEST a known edge hypothesis to gather evidence for one adjacent edge.
+- Final credit requires a complete path of the required length, backed by evidence for every adjacent edge gathered in this episode.
 - Shorter intermediate paths can help you explore, but they are not final answers.
 - Prefer exploring multiple promising branches when the budget allows.
 - If you have no evidence yet, INTERVENE on a known variable before testing edges.

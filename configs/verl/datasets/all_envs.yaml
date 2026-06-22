@@ -77,13 +77,14 @@ datasets:
     env_type: scattered_causal
     output: data/verl/scattered_causal_train.parquet
     count: 256
+    max_steps: 13
     seed: 301
     dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
     world_values:
       num_branches: [3, 4, 5]
       branch_depth: [2, 3]
       distractors_per_node: [1, 2]
-      base_budget: [5, 7, 9]
+      base_budget: [9, 11, 13]
     task:
       world:
         true_mean: 1.0
@@ -92,7 +93,7 @@ datasets:
         accept_threshold: 0.82
         reject_threshold: 0.18
         test_cost: 1
-        intervene_cost: 1
+        intervene_cost: 2
         invalid_action_cost: 1
       agent:
         include_hidden_debug_in_prompt: false
@@ -103,13 +104,14 @@ datasets:
     env_type: scattered_causal
     output: data/verl/scattered_causal_val.parquet
     count: 320
+    max_steps: 13
     seed: 1301
     dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
     world_values:
       num_branches: [3, 4, 5]
       branch_depth: [2, 3]
       distractors_per_node: [1, 2]
-      base_budget: [5, 7, 9]
+      base_budget: [9, 11, 13]
     task:
       world:
         true_mean: 1.0
@@ -118,7 +120,7 @@ datasets:
         accept_threshold: 0.82
         reject_threshold: 0.18
         test_cost: 1
-        intervene_cost: 1
+        intervene_cost: 2
         invalid_action_cost: 1
       agent:
         include_hidden_debug_in_prompt: false

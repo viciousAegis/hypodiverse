@@ -90,6 +90,35 @@ class DSLAndEnvTests(unittest.TestCase):
         self.assertEqual(result.score.valid_unique_count, 1)
         self.assertIn(canonical_key(terminal), result.score.valid_keys)
 
+    def test_path_level_evidence_does_not_support_final_commit(self) -> None:
+        config = WorldConfig(
+            num_branches=1,
+            branch_depth=2,
+            distractors_per_node=0,
+            noise_sigma=0.1,
+            base_budget=5,
+        )
+        env = ScatteredDiscoveryEnv(
+            config,
+            world_seed=1,
+            episode_seed=2,
+            dispersion=1.0,
+            protocol="single",
+            max_commit=1,
+        )
+        branch = env.world.branches[0]
+        path_text = ",".join(branch.path)
+        for variable in branch.path:
+            env.known_variables.add(variable)
+        env.step(f"ACTION: TEST path({path_text})")
+
+        result = env.step(f"ACTION: COMMIT path({path_text})")
+        self.assertTrue(result.done)
+        self.assertIsNotNone(result.score)
+        assert result.score is not None
+        self.assertEqual(result.score.valid_unique_count, 0)
+        self.assertEqual(result.score.unsupported_count, 1)
+
     def test_public_state_hides_verifier_status_by_default(self) -> None:
         config = WorldConfig(
             num_branches=1,

@@ -26,12 +26,11 @@ There are several such branches in the same world. Some branches may share an ea
 ```text
 ACTION: INTERVENE x00
 ACTION: TEST edge(x00,x01)
-ACTION: TEST path(x00,x01,x02)
 ACTION: COMMIT path(x00,x01,x02)
 ACTION: COMMIT [path(...); path(...)]
 ```
 
-The model starts with only the initial measurable variables. Intervening on a known variable reveals downstream candidate variables and noisy measurements for each outgoing candidate edge. Testing a claim collects noisy evidence for that claim. Committing ends the episode and scores the final hypothesis or final set.
+The model starts with only the initial measurable variables. Intervening on a known variable reveals downstream candidate variables and noisy measurements for each outgoing candidate edge. Testing an edge collects noisy evidence for that edge. Committing ends the episode and scores the final hypothesis or final set.
 
 The model-facing problem is therefore:
 
@@ -62,7 +61,9 @@ world:
   num_branches: 3
   branch_depth: 2
   distractors_per_node: 1
-  base_budget: 8
+  base_budget: 10
+  test_cost: 1
+  intervene_cost: 2
 ```
 
 `num_branches` controls how many terminal answers exist. If there are three branches, there are three true terminal paths.
@@ -137,7 +138,7 @@ world_values:
   num_branches: [3, 4, 5]
   branch_depth: [2, 3]
   distractors_per_node: [1, 2]
-  base_budget: [5, 7, 9]
+  base_budget: [9, 11, 13]
 ```
 
 These are not conflicts with `task.world`. The `task.world` block sets fixed defaults, and `world_values` overrides selected fields per generated row. This lets a single train or validation file contain a balanced mixture of graph sizes, budgets, and dispersion values.
@@ -155,10 +156,9 @@ The main difficulty knobs are:
 
 The environment uses noisy Gaussian measurements. True claims sample around `true_mean`; false claims sample around `false_mean`; `noise_sigma` controls overlap.
 
-Evidence is accumulated as log odds. The model sees measurement summaries, not the hidden truth. A final path can be valid in two ways:
+Evidence is accumulated as log odds. The model sees measurement summaries, not the hidden truth.
 
-1. The full path claim itself was accepted by evidence.
-2. Every edge in the path was accepted by evidence.
+A committed final path is evidence-backed only when every adjacent edge in that path has accepted evidence from the episode. The parser may still accept diagnostic path tests, but a path-level test is not sufficient for final credit in the current pilot setup. This keeps the interactive contract realistic: the agent must discover and support the causal chain edge by edge, rather than query the whole final answer directly.
 
 A committed hypothesis is only valid if all of these are true:
 

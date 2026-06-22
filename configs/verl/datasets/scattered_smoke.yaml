@@ -3,7 +3,7 @@
 defaults:
   agent_name: discovery_agent_loop
   protocol: single
-  max_steps: 5
+  max_steps: 10
   max_commit: 1
   reward_profile: terminal_only
 
@@ -25,9 +25,9 @@ datasets:
         noise_sigma: 0.25
         accept_threshold: 0.78
         reject_threshold: 0.22
-        base_budget: 8
+        base_budget: 10
         test_cost: 1
-        intervene_cost: 1
+        intervene_cost: 2
         invalid_action_cost: 1
       agent:
         include_hidden_debug_in_prompt: false
@@ -50,9 +50,9 @@ datasets:
         noise_sigma: 0.25
         accept_threshold: 0.78
         reject_threshold: 0.22
-        base_budget: 8
+        base_budget: 10
         test_cost: 1
-        intervene_cost: 1
+        intervene_cost: 2
         invalid_action_cost: 1
       agent:
         include_hidden_debug_in_prompt: false

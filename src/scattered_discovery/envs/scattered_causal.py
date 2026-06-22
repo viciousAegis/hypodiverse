@@ -376,14 +376,12 @@ class ScatteredDiscoveryEnv:
         )
 
     def _evidence_backed(self, expr: Expr, info: HypothesisInfo) -> bool:
-        key = canonical_key(expr)
-        if self.evidence.is_accepted(key):
-            return True
         if isinstance(expr, PathExpr):
             return all(
                 self.evidence.is_accepted(edge_key)
                 for edge_key in edge_keys_for_path(expr)
             )
+        key = canonical_key(expr)
         return info.terminal and self.evidence.is_accepted(key)
 
     def _format_test_observation(

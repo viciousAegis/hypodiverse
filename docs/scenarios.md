@@ -21,7 +21,7 @@ datasets:
     count: 8
     seed: 11
     protocol: single
-    max_steps: 4
+    max_steps: 6
     max_commit: 1
     task:
       dispersion: 0.0
@@ -29,7 +29,9 @@ datasets:
         num_branches: 2
         branch_depth: 2
         distractors_per_node: 1
-        base_budget: 4
+        base_budget: 6
+        test_cost: 1
+        intervene_cost: 2
 ```
 
 ## Easy Single-Answer Scattered Causal
@@ -44,7 +46,7 @@ datasets:
     count: 512
     seed: 101
     protocol: single
-    max_steps: 5
+    max_steps: 8
     max_commit: 1
     task:
       dispersion: 0.0
@@ -53,7 +55,9 @@ datasets:
         branch_depth: 2
         distractors_per_node: 1
         noise_sigma: 0.25
-        base_budget: 5
+        base_budget: 8
+        test_cost: 1
+        intervene_cost: 2
 ```
 
 Why this is easier:
@@ -77,7 +81,7 @@ datasets:
     count: 1024
     seed: 201
     protocol: single
-    max_steps: 8
+    max_steps: 13
     max_commit: 1
     task:
       dispersion: 1.0
@@ -86,7 +90,9 @@ datasets:
         branch_depth: 3
         distractors_per_node: 3
         noise_sigma: 0.35
-        base_budget: 10
+        base_budget: 13
+        test_cost: 1
+        intervene_cost: 2
 ```
 
 Why this is harder:
@@ -110,7 +116,7 @@ datasets:
     count: 512
     seed: 301
     protocol: set
-    max_steps: 10
+    max_steps: 16
     max_commit: 4
     task:
       dispersion: 1.0
@@ -119,7 +125,9 @@ datasets:
         num_branches: 4
         branch_depth: 3
         distractors_per_node: 2
-        base_budget: 8
+        base_budget: 16
+        test_cost: 1
+        intervene_cost: 2
 ```
 
 Use `protocol: single` with `ROLLOUT_N=K` for pass@K-style multiple independent completions. Use `protocol: set` with `max_commit: K` when one rollout must commit up to K hypotheses.
@@ -136,7 +144,7 @@ datasets:
     count: 1024
     seed: 401
     protocol: single
-    max_steps: 10
+    max_steps: 14
     max_commit: 1
     reward_profile: shaped
     task:
@@ -150,7 +158,9 @@ datasets:
         noise_sigma: 0.6
         accept_threshold: 0.9
         reject_threshold: 0.1
-        base_budget: 12
+        base_budget: 14
+        test_cost: 1
+        intervene_cost: 2
 ```
 
 ## Budget Pressure
@@ -165,7 +175,7 @@ datasets:
     count: 512
     seed: 501
     protocol: single
-    max_steps: 5
+    max_steps: 7
     max_commit: 1
     task:
       dispersion: 0.75
@@ -173,7 +183,9 @@ datasets:
         num_branches: 4
         branch_depth: 3
         distractors_per_node: 2
-        base_budget: 5
+        base_budget: 7
+        test_cost: 1
+        intervene_cost: 2
       reward:
         budget_penalty: 0.02
 ```

@@ -21,7 +21,7 @@ class WorldConfig:
     reject_threshold: float = 0.18
     base_budget: int = 10
     test_cost: int = 1
-    intervene_cost: int = 1
+    intervene_cost: int = 2
     invalid_action_cost: int = 1
     valid_hypothesis_reward: float = SCATTERED_CAUSAL_REWARD.valid_hypothesis_reward
     false_penalty: float = SCATTERED_CAUSAL_REWARD.false_penalty
@@ -42,7 +42,7 @@ class EvalConfig:
     protocol: Literal["single", "set"] = "single"
     num_worlds: int = 2
     rollouts_per_world: int = 3
-    max_steps: int = 8
+    max_steps: int = 10
     final_commit_attempt: bool = True
     output_dir: str = "results"
     run_name: str = "debug"

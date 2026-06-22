@@ -38,7 +38,7 @@ Top-level shape:
 defaults:
   agent_name: discovery_agent_loop
   protocol: single
-  max_steps: 6
+  max_steps: 13
   max_commit: 1
 
 datasets:
@@ -53,7 +53,7 @@ datasets:
       num_branches: [3, 4, 5]
       branch_depth: [2, 3]
       distractors_per_node: [1, 2]
-      base_budget: [5, 7, 9]
+      base_budget: [9, 11, 13]
     task:
       world:
         noise_sigma: 0.35
@@ -181,7 +181,7 @@ world_values:
   num_branches: [3, 4, 5]
   branch_depth: [2, 3, 4]
   distractors_per_node: [1, 2, 3]
-  base_budget: [5, 7, 9]
+  base_budget: [9, 11, 13]
 ```
 
 Use `dispersion_values` for shared-prefix/diversity structure and `world_values`
@@ -216,7 +216,7 @@ task:
     reject_threshold: 0.18
     base_budget: 10
     test_cost: 1
-    intervene_cost: 1
+    intervene_cost: 2
     invalid_action_cost: 1
   agent:
     include_hidden_debug_in_prompt: false

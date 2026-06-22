@@ -150,3 +150,9 @@ Interpretation:
 - High `unsupported_count_mean`: model commits without enough evidence.
 - Low single-rollout signal but nonzero pass@4: GRPO has something to amplify.
 - Near-zero pass@4: simplify or shape before running the pilot.
+
+For scattered-causal eval, keep the rollout `max_steps` at least as large as the
+largest visible `base_budget` in the evaluated split. Otherwise the model sees a
+larger remaining experiment budget than the outer rollout loop will actually
+allow. The scattered smoke preset uses `max_steps: 10` for `base_budget: 10`;
+the pilot presets use `max_steps: 13` for `base_budget: [9, 11, 13]`.
