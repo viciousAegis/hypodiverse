@@ -117,6 +117,13 @@ sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_single_su
 If the single-rollout pilot subset has weak but nonzero signal, run pass@4:
 
 ```bash
+sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_probe.yaml \
+  scripts/cluster/sbatch_scattered_eval.slurm
+```
+
+Use the full pass@4 subset only after the probe shows useful signal:
+
+```bash
 sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_subset.yaml \
   scripts/cluster/sbatch_scattered_eval.slurm
 ```

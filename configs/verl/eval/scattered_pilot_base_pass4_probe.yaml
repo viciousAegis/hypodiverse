@@ -1,5 +1,5 @@
-# pass@4-style base-model calibration on the mixed pilot validation subset.
-# Keep protocol single in the dataset; K comes from rollouts_per_spec.
+# Small pass@4-style base-model calibration on the mixed pilot validation split.
+# Use this before the full pass@4 subset to estimate signal and runtime.
 
 dataset_config: configs/verl/datasets/scattered_pilot.yaml
 prepare_datasets: 1
@@ -8,13 +8,13 @@ model_id: Qwen/Qwen3-4B
 download_model: 1
 eval_file: data/verl/scattered_causal_pilot_val.parquet
 output_dir: results/envspec_eval
-run_name: scattered_pilot_base_pass4_subset
+run_name: scattered_pilot_base_pass4_probe
 
-max_examples: 200
+max_examples: 50
 rollouts_per_spec: 4
-eval_workers: 8
+eval_workers: 16
 max_steps: 13
-max_response_length: 4096
+max_response_length: 2048
 temperature: 0.6
 top_p: 0.95
 request_timeout_s: 600

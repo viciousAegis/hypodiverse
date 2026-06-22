@@ -39,6 +39,7 @@ KEY_MAP = {
     "run_name": "RUN_NAME",
     "max_examples": "MAX_EXAMPLES",
     "rollouts_per_spec": "ROLLOUTS_PER_SPEC",
+    "eval_workers": "EVAL_WORKERS",
     "temperature": "TEMPERATURE",
     "top_p": "TOP_P",
     "base_url": "BASE_URL",

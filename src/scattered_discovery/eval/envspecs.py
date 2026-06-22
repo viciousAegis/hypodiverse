@@ -4,6 +4,7 @@ import argparse
 import json
 import statistics
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -194,12 +195,34 @@ def _maybe_start_wandb(args: argparse.Namespace):
             "model": args.model,
             "input": args.input,
             "rollouts_per_spec": args.rollouts_per_spec,
+            "eval_workers": args.workers,
             "max_steps": args.max_steps,
             "num_predict": args.num_predict,
             "temperature": args.temperature,
             "top_p": args.top_p,
         },
     )
+
+
+def _run_episode_job(
+    args: argparse.Namespace,
+    spec: dict[str, Any],
+    spec_index: int,
+    rollout_index: int,
+) -> dict[str, Any]:
+    backend = build_backend(args)
+    record = run_local_episode(
+        spec=spec,
+        backend=backend,
+        max_steps=args.max_steps,
+        output_transcript=args.transcripts,
+    )
+    record["spec_index"] = spec_index
+    record["rollout_index"] = rollout_index
+    record["env_type"] = spec["env_type"]
+    record["task"] = spec.get("task", {})
+    record["model"] = args.model
+    return record
 
 
 def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
@@ -217,28 +240,27 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         )
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    backend = build_backend(args)
     wandb_run = _maybe_start_wandb(args)
     records = []
     started = time.monotonic()
 
     episodes_path = output_dir / "episodes.jsonl"
     with episodes_path.open("w", encoding="utf-8") as handle:
-        for spec_index, spec in enumerate(specs):
-            for rollout_index in range(args.rollouts_per_spec):
-                record = run_local_episode(
-                    spec=spec,
-                    backend=backend,
-                    max_steps=args.max_steps,
-                    output_transcript=args.transcripts,
-                )
-                record["spec_index"] = spec_index
-                record["rollout_index"] = rollout_index
-                record["env_type"] = spec["env_type"]
-                record["task"] = spec.get("task", {})
-                record["model"] = args.model
+        jobs = [
+            (spec, spec_index, rollout_index)
+            for spec_index, spec in enumerate(specs)
+            for rollout_index in range(args.rollouts_per_spec)
+        ]
+
+        if args.workers <= 1:
+            completed_iter = (
+                _run_episode_job(args, spec, spec_index, rollout_index)
+                for spec, spec_index, rollout_index in jobs
+            )
+            for record in completed_iter:
                 records.append(record)
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
+                handle.flush()
                 if wandb_run is not None:
                     wandb_run.log(
                         {
@@ -254,9 +276,46 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                             "eval/recovery": record["score"]
                             .get("metrics", {})
                             .get("recovery", 0.0),
-                            "eval/spec_index": spec_index,
+                            "eval/spec_index": record["spec_index"],
                         }
                     )
+        else:
+            with ThreadPoolExecutor(max_workers=args.workers) as executor:
+                futures = [
+                    executor.submit(
+                        _run_episode_job,
+                        args,
+                        spec,
+                        spec_index,
+                        rollout_index,
+                    )
+                    for spec, spec_index, rollout_index in jobs
+                ]
+                for future in as_completed(futures):
+                    record = future.result()
+                    records.append(record)
+                    handle.write(json.dumps(record, sort_keys=True) + "\n")
+                    handle.flush()
+                    if wandb_run is not None:
+                        wandb_run.log(
+                            {
+                                "eval/reward": record["score"]["reward"],
+                                "eval/valid_unique_count": record["score"].get(
+                                    "valid_unique_count", 0
+                                ),
+                                "eval/validity": record["score"].get("validity", 0.0),
+                                "eval/uniqueness": record["score"].get(
+                                    "uniqueness", 0.0
+                                ),
+                                "eval/non_final_count": record["score"].get(
+                                    "non_final_count", 0
+                                ),
+                                "eval/recovery": record["score"]
+                                .get("metrics", {})
+                                .get("recovery", 0.0),
+                                "eval/spec_index": record["spec_index"],
+                            }
+                        )
 
     summary = summarize_records(records)
     summary.update(
@@ -266,6 +325,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             "model": args.model,
             "specs": len(specs),
             "rollouts_per_spec": args.rollouts_per_spec,
+            "eval_workers": args.workers,
             "wall_seconds": time.monotonic() - started,
         }
     )
@@ -300,6 +360,12 @@ def main() -> None:
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--max-examples", type=int, default=None)
     parser.add_argument("--rollouts-per-spec", type=int, default=1)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Concurrent independent episodes to run against the model server.",
+    )
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--num-predict", type=int, default=1024)
     parser.add_argument("--temperature", type=float, default=0.7)
@@ -310,6 +376,8 @@ def main() -> None:
     parser.add_argument("--wandb-project", default=None)
     parser.add_argument("--wandb-run-name", default=None)
     args = parser.parse_args()
+    if args.workers < 1:
+        raise SystemExit("--workers must be >= 1")
 
     output_dir, summary = run_eval(args)
     print(json.dumps({"output_dir": str(output_dir), "summary": summary}, indent=2))
