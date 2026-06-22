@@ -131,7 +131,7 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
         score_dict = score.as_dict()
         diagnostics = env.diagnostics()
         metrics = {
-            "reward": score.reward,
+            "terminal_reward": score.reward,
             "num_turns": len(transcript),
             "budget_used": diagnostics.get("budget_used", 0),
             "parse_failures": score.parse_failures,
@@ -165,7 +165,6 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 num_preempted=num_preempted,
             ),
             extra_fields={
-                "discovery_metrics": metrics,
                 "reward_extra_info": metrics,
                 "score": score_dict,
                 "diagnostics": diagnostics,

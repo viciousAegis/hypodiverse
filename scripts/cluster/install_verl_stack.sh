@@ -122,6 +122,8 @@ if [[ "${INSTALL_FLASH_ATTN:-0}" == "1" ]]; then
   retry_cmd env MAX_JOBS="${MAX_JOBS:-4}" uv pip install --no-build-isolation "$FLASH_ATTN_SPEC"
 fi
 
+retry_cmd uv pip install "datasets==2.20.0" "fsspec==2024.5.0"
+
 python - <<'PY'
 import os
 import importlib.util

@@ -16,3 +16,4 @@ checkpoints/
 artifacts/
 logs/*
 !logs/.gitkeep
+outputs/*

@@ -5,10 +5,8 @@ dataset_config: configs/verl/datasets/scattered_smoke.yaml
 prepare_datasets: 1
 
 discovery_algo: grpo
-model_id: Qwen/Qwen3-4B
+model_id: Qwen/Qwen3-1.7B
 download_model: 1
-attn_implementation: sdpa
-use_remove_padding: "False"
 train_file: data/verl/scattered_causal_smoke_train.parquet
 val_file: data/verl/scattered_causal_smoke_val.parquet
 

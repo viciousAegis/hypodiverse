@@ -9,15 +9,19 @@ description = "Interactive synthetic causal discovery environment with DSL-gener
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
+  "cachetools>=7.1.4",
   "pyyaml>=6.0.2",
 ]
 
 [project.optional-dependencies]
 verl = [
+  "datasets==2.20.0",
+  "fsspec==2024.5.0",
   "huggingface_hub>=0.24.0",
   "pandas>=2.2.0",
   "pyarrow>=16.0.0,<21.0.0",
   "wandb>=0.17.0",
+  "einops>=0.8.0",
 ]
 
 [project.scripts]
@@ -32,6 +36,12 @@ scattered-discovery-viewer = "scattered_discovery.viewer:main"
 
 [tool.uv]
 package = true
+environments = [
+  "sys_platform == 'linux' and python_full_version >= '3.11' and python_full_version < '3.13'",
+]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/scattered_discovery"]
+packages = [
+  "src/scattered_discovery",
+  "src/flash_attn",
+]
