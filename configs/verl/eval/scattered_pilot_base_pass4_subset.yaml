@@ -24,4 +24,4 @@ sglang_host: 127.0.0.1
 sglang_port: 30000
 sglang_tp: 1
 sglang_mem_fraction_static: 0.55
-sglang_extra_args: "--attention-backend triton --sampling-backend pytorch --cuda-graph-backend-decode disabled --cuda-graph-backend-prefill disabled"
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch --disable-cuda-graph"
