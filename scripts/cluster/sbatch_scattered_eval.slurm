@@ -45,6 +45,6 @@ source "$VENV_DIR/bin/activate"
 # shellcheck disable=SC1091
 source scripts/cluster/prepend_venv_cuda_libs.sh
 
-export WANDB_PROJECT="${WANDB_PROJECT:-}"
+export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
 
 scripts/cluster/run_scattered_eval_openai.sh "$@"

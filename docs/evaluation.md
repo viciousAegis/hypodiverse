@@ -31,7 +31,7 @@ UV_CACHE_DIR=.uv-cache uv run scattered-discovery-eval-envspecs \
 Outputs:
 
 ```text
-results/envspec_eval/<run>/
+results/envspec_eval/<run>/<timestamp>/
   config.json
   episodes.jsonl
   summary.json
@@ -107,6 +107,13 @@ sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_smoke_base_single.ya
   scripts/cluster/sbatch_scattered_eval.slurm
 ```
 
+For a quick 16-episode utilization/W&B check:
+
+```bash
+sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_util16.yaml \
+  scripts/cluster/sbatch_scattered_eval.slurm
+```
+
 Then run the mixed pilot subset:
 
 ```bash
@@ -131,12 +138,15 @@ sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_sub
 Each run writes:
 
 ```text
-results/envspec_eval/<run_name>/
+results/envspec_eval/<run_name>/<timestamp>/
   config.json
   episodes.jsonl
   summary.json
   summary_by_task.json
 ```
+
+The runner also updates `results/envspec_eval/<run_name>/latest` to point at the
+most recent timestamped run.
 
 Use `summary.json` for aggregate difficulty and `summary_by_task.json` to check
 which task regions are learnable. The stratified summary is broken out by:
@@ -148,6 +158,18 @@ branch_depth
 distractors_per_node
 base_budget
 ```
+
+To create CSV summaries and plots after a run:
+
+```bash
+uv run --extra analysis scattered-discovery-plot-eval \
+  results/envspec_eval/scattered_pilot_base_pass4_probe/latest
+```
+
+The plotter writes `plots/episode_metrics_by_task.csv`,
+`plots/spec_metrics_by_task.csv`, and PNG charts under the selected result
+directory. The most useful charts for diversity are `dispersion_pass_at_k.png`
+and `dispersion_unique_target_coverage.png`.
 
 Interpretation:
 

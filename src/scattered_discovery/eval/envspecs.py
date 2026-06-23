@@ -230,15 +230,23 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     if args.max_examples is not None:
         specs = specs[: args.max_examples]
 
-    output_dir = Path(args.output_dir)
+    timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    output_root = Path(args.output_dir)
     if args.run_name:
-        output_dir = output_dir / args.run_name
+        run_root = output_root / args.run_name
     else:
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        output_dir = (
-            output_dir / f"{args.provider}_{args.model.replace('/', '_')}_{timestamp}"
+        run_root = (
+            output_root / f"{args.provider}_{args.model.replace('/', '_')}"
         )
+    output_dir = run_root / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
+    latest_link = run_root / "latest"
+    try:
+        if latest_link.is_symlink() or latest_link.exists():
+            latest_link.unlink()
+        latest_link.symlink_to(output_dir.name, target_is_directory=True)
+    except OSError:
+        pass
 
     wandb_run = _maybe_start_wandb(args)
     records = []
@@ -326,6 +334,8 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             "specs": len(specs),
             "rollouts_per_spec": args.rollouts_per_spec,
             "eval_workers": args.workers,
+            "run_root": str(run_root),
+            "run_timestamp": timestamp,
             "wall_seconds": time.monotonic() - started,
         }
     )

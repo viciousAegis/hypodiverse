@@ -1,0 +1,28 @@
+# Tiny pass@4 utilization check: 4 specs * 4 rollouts = 16 episodes.
+# Use this to inspect SGLang batching, GPU utilization, and W&B logging quickly.
+
+dataset_config: configs/verl/datasets/scattered_pilot.yaml
+prepare_datasets: 1
+
+model_id: Qwen/Qwen3-4B
+download_model: 1
+eval_file: data/verl/scattered_causal_pilot_val.parquet
+output_dir: results/envspec_eval
+run_name: scattered_pilot_base_pass4_util16
+
+max_examples: 4
+rollouts_per_spec: 4
+eval_workers: 16
+max_steps: 13
+max_response_length: 4096
+temperature: 0.6
+top_p: 0.95
+request_timeout_s: 600
+transcripts: 0
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.55
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch --disable-cuda-graph"

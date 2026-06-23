@@ -23,6 +23,9 @@ verl = [
   "wandb>=0.17.0",
   "einops>=0.8.0",
 ]
+analysis = [
+  "matplotlib>=3.8.0",
+]
 
 [project.scripts]
 scattered-discovery-eval = "scattered_discovery.eval.run:main"
@@ -30,6 +33,7 @@ scattered-discovery-eval-envspecs = "scattered_discovery.eval.envspecs:main"
 scattered-discovery-graph-gallery = "scattered_discovery.graph_gallery:main"
 scattered-discovery-local = "scattered_discovery.rollout.local_loop:main"
 scattered-discovery-make-dataset = "scattered_discovery.verl.make_dataset:main"
+scattered-discovery-plot-eval = "scattered_discovery.eval.plot_results:main"
 scattered-discovery-algo-overrides = "scattered_discovery.algos.cli:main"
 scattered-discovery-rewards = "scattered_discovery.rewards:main"
 scattered-discovery-viewer = "scattered_discovery.viewer:main"
