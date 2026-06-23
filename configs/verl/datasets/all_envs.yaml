@@ -4,6 +4,7 @@ defaults:
   agent_name: discovery_agent_loop
   protocol: single
   max_steps: 6
+  max_consecutive_invalid: 2
   max_commit: 1
   reward_profile: terminal_only
 

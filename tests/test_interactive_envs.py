@@ -61,6 +61,38 @@ class InteractiveEnvTests(unittest.TestCase):
         self.assertGreaterEqual(final.score.reward, 1.0)
         self.assertGreater(final.score.breakdown.valid_hypothesis, 0.0)
 
+    def test_local_episode_preempts_after_consecutive_invalid_actions(self):
+        record = run_local_episode(
+            spec=EnvSpec(
+                env_type="hypospace_causal",
+                task={
+                    "nodes": ["A", "B", "C"],
+                    "max_edges": 2,
+                    "target_edges": [["A", "B"], ["B", "C"]],
+                    "query_budget": 2,
+                },
+                protocol="single",
+                max_steps=5,
+                max_commit=1,
+                max_consecutive_invalid=2,
+                seed=11,
+            ),
+            backend=ScriptedBackend(["not an action", "still not an action"]),
+            max_consecutive_invalid=2,
+        )
+        self.assertEqual(record["steps"], 2)
+        self.assertEqual(
+            record["diagnostics"]["early_stop_reason"],
+            "consecutive_invalid_actions",
+        )
+        self.assertEqual(record["diagnostics"]["consecutive_invalid_at_stop"], 2)
+        self.assertEqual(
+            record["score"]["metrics"]["early_stop_reason"],
+            "consecutive_invalid_actions",
+        )
+        self.assertEqual(record["score"]["parse_failures"], 2)
+        self.assertEqual(record["score"]["invalid_actions"], 2)
+
     def test_hypospace_boolean_interactive_commit(self):
         env = make_env(
             EnvSpec(

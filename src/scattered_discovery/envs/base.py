@@ -126,6 +126,7 @@ class EnvSpec:
     protocol: str = "single"
     max_steps: int = 8
     max_commit: int = 1
+    max_consecutive_invalid: int = 2
     seed: int = 0
 
 

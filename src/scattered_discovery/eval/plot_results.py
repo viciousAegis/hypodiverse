@@ -30,6 +30,13 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _load_all_records(paths: list[Path]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for path in paths:
+        records.extend(_load_records(path))
+    return records
+
+
 def _task_value(record: dict[str, Any], field: str) -> Any:
     task = record.get("task")
     if not isinstance(task, dict):
@@ -84,6 +91,15 @@ def _episode_summary(records: list[dict[str, Any]], field: str) -> list[dict[str
                 ),
                 "invalid_actions": _mean(
                     [float(score.get("invalid_actions", 0)) for score in scores]
+                ),
+                "early_stop_consecutive_invalid": _mean(
+                    [
+                        float(
+                            score.get("metrics", {}).get("early_stop_reason")
+                            == "consecutive_invalid_actions"
+                        )
+                        for score in scores
+                    ]
                 ),
             }
         )
@@ -197,6 +213,7 @@ def _plot_all(
             ("false_count", "mean false commits"),
             ("unsupported_count", "mean unsupported commits"),
             ("parse_failures", "mean parse failures"),
+            ("early_stop_consecutive_invalid", "early-stop rate"),
         ):
             path = output_dir / f"{field}_{metric}.png"
             _plot_bar(
@@ -228,7 +245,11 @@ def _plot_all(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("result", help="Result directory or episodes.jsonl path.")
+    parser.add_argument(
+        "result",
+        nargs="+",
+        help="One or more result directories or episodes.jsonl paths.",
+    )
     parser.add_argument(
         "--out",
         default=None,
@@ -241,12 +262,17 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    result_path = Path(args.result)
-    records = _load_records(result_path)
+    result_paths = [Path(result) for result in args.result]
+    records = _load_all_records(result_paths)
+    default_base = (
+        result_paths[0] if result_paths[0].is_dir() else result_paths[0].parent
+    )
+    if len(result_paths) > 1:
+        default_base = default_base.parent / "merged_plots"
     output_dir = (
         Path(args.out)
         if args.out
-        else (result_path if result_path.is_dir() else result_path.parent) / "plots"
+        else (default_base if len(result_paths) > 1 else default_base / "plots")
     )
 
     episode_rows = {field: _episode_summary(records, field) for field in TASK_FIELDS}
@@ -260,6 +286,7 @@ def main() -> None:
         json.dumps(
             {
                 "episodes": len(records),
+                "inputs": [str(path) for path in result_paths],
                 "episode_metrics_by_task": episode_rows,
                 "spec_metrics_by_task": spec_rows,
             },
@@ -287,6 +314,7 @@ def main() -> None:
         json.dumps(
             {
                 "episodes": len(records),
+                "inputs": [str(path) for path in result_paths],
                 "output_dir": str(output_dir),
                 "csv": [
                     str(output_dir / "episode_metrics_by_task.csv"),

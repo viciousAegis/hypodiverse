@@ -57,6 +57,7 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
         env_spec = json.loads(env_spec_json)
         env = make_env(env_spec)
         max_steps = int(env_spec.get("max_steps", 8))
+        max_consecutive_invalid = int(env_spec.get("max_consecutive_invalid", 2))
         max_response_length = int(self.rollout_config.response_length)
         request_id = _as_text(kwargs.get("uid", uuid4().hex))
 
@@ -71,6 +72,8 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
         num_preempted = 0
         started = time.monotonic()
         score = None
+        consecutive_invalid = 0
+        early_stop_reason: str | None = None
 
         for _ in range(max_steps):
             turn_prompt_ids = await self.apply_chat_template(messages)
@@ -89,6 +92,10 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
             )
             assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
             step = env.step(assistant_text)
+            invalid_step = (not step.parse_ok) or (
+                "not admissible" in step.observation.lower()
+            )
+            consecutive_invalid = consecutive_invalid + 1 if invalid_step else 0
             messages.append({"role": "assistant", "content": assistant_text})
             assistant_item = {
                 "role": "assistant",
@@ -101,6 +108,12 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
             transcript.append(assistant_item)
             if step.done:
                 score = step.score
+                break
+            if (
+                max_consecutive_invalid > 0
+                and consecutive_invalid >= max_consecutive_invalid
+            ):
+                early_stop_reason = "consecutive_invalid_actions"
                 break
 
             observation_message = env.observation_prompt(step, "verl")
@@ -120,6 +133,9 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
 
         if score is None:
             score = env.force_finalize()
+        score.metrics["early_stop_reason"] = early_stop_reason
+        score.metrics["max_consecutive_invalid"] = max_consecutive_invalid
+        score.metrics["consecutive_invalid_at_stop"] = consecutive_invalid
 
         response_ids, response_mask = _truncate_response_budget(
             response_ids,
@@ -141,6 +157,9 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "budget_used": diagnostics.get("budget_used", 0),
             "parse_failures": score.parse_failures,
             "invalid_actions": score.invalid_actions,
+            "early_stop_consecutive_invalid": 1.0
+            if early_stop_reason == "consecutive_invalid_actions"
+            else 0.0,
             "valid_unique_count": score.valid_unique_count,
             "valid_committed_count": score.valid_committed_count,
             "non_final_count": score.non_final_count,

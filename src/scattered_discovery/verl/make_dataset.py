@@ -33,6 +33,7 @@ def build_specs(
     protocol: str,
     max_steps: int,
     max_commit: int,
+    max_consecutive_invalid: int = 2,
     task_overrides: dict[str, Any] | None = None,
     dispersion_values: list[float] | None = None,
     world_values: dict[str, list[Any]] | None = None,
@@ -72,6 +73,7 @@ def build_specs(
                 protocol=protocol,
                 max_steps=max_steps,
                 max_commit=max_commit,
+                max_consecutive_invalid=max_consecutive_invalid,
                 seed=seed + index,
             )
         )
@@ -236,6 +238,7 @@ def build_rows_from_definition(
         protocol=str(definition.get("protocol", "single")),
         max_steps=int(definition.get("max_steps", 8)),
         max_commit=int(definition.get("max_commit", 1)),
+        max_consecutive_invalid=int(definition.get("max_consecutive_invalid", 2)),
         task_overrides=task,
         dispersion_values=dispersion_values,
         world_values=world_values,
@@ -372,6 +375,7 @@ def main() -> None:
     parser.add_argument("--protocol", choices=["single", "set"], default="single")
     parser.add_argument("--max-steps", type=int, default=8)
     parser.add_argument("--max-commit", type=int, default=1)
+    parser.add_argument("--max-consecutive-invalid", type=int, default=2)
     parser.add_argument("--agent-name", default="discovery_agent_loop")
     parser.add_argument(
         "--nodes", default=None, help="Comma-separated causal nodes, e.g. A,B,C."
@@ -438,6 +442,7 @@ def main() -> None:
         protocol=args.protocol,
         max_steps=args.max_steps,
         max_commit=args.max_commit,
+        max_consecutive_invalid=args.max_consecutive_invalid,
         task_overrides=_task_overrides_from_args(args),
     )
     rows = specs_to_rows(specs, agent_name=args.agent_name)

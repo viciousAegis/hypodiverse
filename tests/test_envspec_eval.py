@@ -3,7 +3,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scattered_discovery.eval.envspecs import load_env_specs, summarize_records
+from scattered_discovery.eval.envspecs import (
+    indexed_specs_for_shard,
+    load_env_specs,
+    summarize_records,
+)
 
 
 class EnvSpecEvalTests(unittest.TestCase):
@@ -71,6 +75,31 @@ class EnvSpecEvalTests(unittest.TestCase):
         self.assertEqual(summary["uniqueness_mean"], 1.0)
         self.assertEqual(summary["non_final_count_mean"], 0.0)
         self.assertEqual(summary["model_seconds_total"], 5.0)
+
+    def test_indexed_specs_for_shard_preserves_original_indices(self):
+        specs = [{"id": idx} for idx in range(10)]
+        shard, total = indexed_specs_for_shard(
+            specs,
+            max_examples=None,
+            shard_index=1,
+            num_shards=3,
+        )
+
+        self.assertEqual(total, 10)
+        self.assertEqual([spec_index for spec_index, _ in shard], [1, 4, 7])
+        self.assertEqual([spec["id"] for _, spec in shard], [1, 4, 7])
+
+    def test_indexed_specs_for_shard_applies_max_examples_before_sharding(self):
+        specs = [{"id": idx} for idx in range(10)]
+        shard, total = indexed_specs_for_shard(
+            specs,
+            max_examples=5,
+            shard_index=0,
+            num_shards=2,
+        )
+
+        self.assertEqual(total, 5)
+        self.assertEqual([spec_index for spec_index, _ in shard], [0, 2, 4])
 
 
 if __name__ == "__main__":

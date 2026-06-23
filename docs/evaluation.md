@@ -114,6 +114,12 @@ sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_uti
   scripts/cluster/sbatch_scattered_eval.slurm
 ```
 
+For a 2-GPU, 64-episode utilization check with 32 workers per GPU:
+
+```bash
+sbatch scripts/cluster/sbatch_scattered_eval_2gpu_util64.slurm
+```
+
 Then run the mixed pilot subset:
 
 ```bash
@@ -133,6 +139,25 @@ Use the full pass@4 subset only after the probe shows useful signal:
 ```bash
 sbatch --export=ALL,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_subset.yaml \
   scripts/cluster/sbatch_scattered_eval.slurm
+```
+
+To split eval across multiple GPUs on one Slurm node, use the sharded launcher.
+It starts one SGLang server per GPU and assigns non-overlapping eval specs by
+`spec_index % EVAL_NUM_SHARDS`. The original one-GPU script above remains the
+fallback.
+
+```bash
+sbatch --gres=gpu:4 \
+  --export=ALL,EVAL_NUM_SHARDS=4,EVAL_CONFIG=configs/verl/eval/scattered_pilot_base_pass4_probe.yaml \
+  scripts/cluster/sbatch_scattered_eval_sharded.slurm
+```
+
+Each shard writes a separate run:
+
+```text
+results/envspec_eval/<run_name>_shard0of4/latest/
+results/envspec_eval/<run_name>_shard1of4/latest/
+...
 ```
 
 Each run writes:
@@ -164,6 +189,22 @@ To create CSV summaries and plots after a run:
 ```bash
 uv run --extra analysis scattered-discovery-plot-eval \
   results/envspec_eval/scattered_pilot_base_pass4_probe/latest
+```
+
+For sharded runs, pass all shard directories and choose a merged output folder:
+
+```bash
+uv run --extra analysis scattered-discovery-plot-eval \
+  results/envspec_eval/scattered_pilot_base_pass4_probe_shard*of*/latest \
+  --out results/envspec_eval/scattered_pilot_base_pass4_probe_merged_plots
+```
+
+For the 2-GPU utilization preset:
+
+```bash
+uv run --extra analysis scattered-discovery-plot-eval \
+  results/envspec_eval/scattered_pilot_base_pass4_util64_2gpu_shard*of*/latest \
+  --out results/envspec_eval/scattered_pilot_base_pass4_util64_2gpu_merged_plots
 ```
 
 The plotter writes `plots/episode_metrics_by_task.csv`,

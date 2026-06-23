@@ -1,5 +1,5 @@
-# Small pass@4-style base-model calibration on the mixed pilot validation split.
-# Use this before the full pass@4 subset to estimate signal and runtime.
+# Two-GPU pass@4 utilization check: 16 specs * 4 rollouts = 64 episodes.
+# The sharded launcher runs 2 shards, so each GPU gets 8 specs * 4 rollouts.
 
 dataset_config: configs/verl/datasets/scattered_pilot.yaml
 prepare_datasets: 1
@@ -8,11 +8,12 @@ model_id: Qwen/Qwen3-4B
 download_model: 1
 eval_file: data/verl/scattered_causal_pilot_val.parquet
 output_dir: results/envspec_eval
-run_name: scattered_pilot_base_pass4_probe
+run_name: scattered_pilot_base_pass4_util64_2gpu
 
-max_examples: 50
+max_examples: 16
 rollouts_per_spec: 4
-eval_workers: 16
+eval_workers: 32
+eval_num_shards: 2
 max_steps: 13
 max_consecutive_invalid: 2
 max_response_length: 4096

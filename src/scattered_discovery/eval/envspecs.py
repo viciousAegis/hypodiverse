@@ -122,6 +122,13 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         float(record["score"].get("metrics", {}).get("recovery", 0.0))
         for record in records
     ]
+    early_stops = [
+        float(
+            record["score"].get("metrics", {}).get("early_stop_reason")
+            == "consecutive_invalid_actions"
+        )
+        for record in records
+    ]
     return {
         "episodes": len(records),
         "reward_mean": _mean(rewards),
@@ -135,6 +142,7 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         "parse_failures_mean": _mean(parse_failures),
         "invalid_actions_mean": _mean(invalid_actions),
         "recovery_mean": _mean(recoveries),
+        "early_stop_consecutive_invalid_mean": _mean(early_stops),
         "model_seconds_total": sum(
             float(record.get("model_seconds", 0.0)) for record in records
         ),
@@ -178,6 +186,31 @@ def stratified_summaries(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {field: summarize_by_task_field(records, field) for field in fields}
 
 
+def indexed_specs_for_shard(
+    specs: list[dict[str, Any]],
+    *,
+    max_examples: int | None,
+    shard_index: int,
+    num_shards: int,
+) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    if num_shards < 1:
+        raise ValueError("num_shards must be >= 1")
+    if shard_index < 0 or shard_index >= num_shards:
+        raise ValueError("shard_index must satisfy 0 <= shard_index < num_shards")
+
+    indexed_specs = list(enumerate(specs))
+    if max_examples is not None:
+        indexed_specs = indexed_specs[:max_examples]
+    total_before_shard = len(indexed_specs)
+    if num_shards > 1:
+        indexed_specs = [
+            (spec_index, spec)
+            for spec_index, spec in indexed_specs
+            if spec_index % num_shards == shard_index
+        ]
+    return indexed_specs, total_before_shard
+
+
 def _maybe_start_wandb(args: argparse.Namespace):
     if not args.wandb_project:
         return None
@@ -196,6 +229,9 @@ def _maybe_start_wandb(args: argparse.Namespace):
             "input": args.input,
             "rollouts_per_spec": args.rollouts_per_spec,
             "eval_workers": args.workers,
+            "shard_index": args.shard_index,
+            "num_shards": args.num_shards,
+            "max_consecutive_invalid": args.max_consecutive_invalid,
             "max_steps": args.max_steps,
             "num_predict": args.num_predict,
             "temperature": args.temperature,
@@ -215,6 +251,7 @@ def _run_episode_job(
         spec=spec,
         backend=backend,
         max_steps=args.max_steps,
+        max_consecutive_invalid=args.max_consecutive_invalid,
         output_transcript=args.transcripts,
     )
     record["spec_index"] = spec_index
@@ -226,9 +263,12 @@ def _run_episode_job(
 
 
 def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
-    specs = load_env_specs(args.input)
-    if args.max_examples is not None:
-        specs = specs[: args.max_examples]
+    indexed_specs, total_specs_before_shard = indexed_specs_for_shard(
+        load_env_specs(args.input),
+        max_examples=args.max_examples,
+        shard_index=args.shard_index,
+        num_shards=args.num_shards,
+    )
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     output_root = Path(args.output_dir)
@@ -256,7 +296,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     with episodes_path.open("w", encoding="utf-8") as handle:
         jobs = [
             (spec, spec_index, rollout_index)
-            for spec_index, spec in enumerate(specs)
+            for spec_index, spec in indexed_specs
             for rollout_index in range(args.rollouts_per_spec)
         ]
 
@@ -284,6 +324,12 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                             "eval/recovery": record["score"]
                             .get("metrics", {})
                             .get("recovery", 0.0),
+                            "eval/early_stop_consecutive_invalid": float(
+                                record["score"]
+                                .get("metrics", {})
+                                .get("early_stop_reason")
+                                == "consecutive_invalid_actions"
+                            ),
                             "eval/spec_index": record["spec_index"],
                         }
                     )
@@ -321,6 +367,12 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                                 "eval/recovery": record["score"]
                                 .get("metrics", {})
                                 .get("recovery", 0.0),
+                                "eval/early_stop_consecutive_invalid": float(
+                                    record["score"]
+                                    .get("metrics", {})
+                                    .get("early_stop_reason")
+                                    == "consecutive_invalid_actions"
+                                ),
                                 "eval/spec_index": record["spec_index"],
                             }
                         )
@@ -331,9 +383,13 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             "input": args.input,
             "provider": args.provider,
             "model": args.model,
-            "specs": len(specs),
+            "specs": len(indexed_specs),
+            "total_specs_before_shard": total_specs_before_shard,
+            "shard_index": args.shard_index,
+            "num_shards": args.num_shards,
             "rollouts_per_spec": args.rollouts_per_spec,
             "eval_workers": args.workers,
+            "max_consecutive_invalid": args.max_consecutive_invalid,
             "run_root": str(run_root),
             "run_timestamp": timestamp,
             "wall_seconds": time.monotonic() - started,
@@ -369,6 +425,8 @@ def main() -> None:
     parser.add_argument("--base-url", default="http://localhost:11434")
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--max-examples", type=int, default=None)
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--num-shards", type=int, default=1)
     parser.add_argument("--rollouts-per-spec", type=int, default=1)
     parser.add_argument(
         "--workers",
@@ -377,6 +435,7 @@ def main() -> None:
         help="Concurrent independent episodes to run against the model server.",
     )
     parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--max-consecutive-invalid", type=int, default=2)
     parser.add_argument("--num-predict", type=int, default=1024)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=0.9)
@@ -388,6 +447,12 @@ def main() -> None:
     args = parser.parse_args()
     if args.workers < 1:
         raise SystemExit("--workers must be >= 1")
+    if args.max_consecutive_invalid < 0:
+        raise SystemExit("--max-consecutive-invalid must be >= 0")
+    if args.num_shards < 1:
+        raise SystemExit("--num-shards must be >= 1")
+    if args.shard_index < 0 or args.shard_index >= args.num_shards:
+        raise SystemExit("--shard-index must satisfy 0 <= shard-index < num-shards")
 
     output_dir, summary = run_eval(args)
     print(json.dumps({"output_dir": str(output_dir), "summary": summary}, indent=2))
