@@ -1,5 +1,6 @@
 import unittest
 
+from scattered_discovery.backends.base import normalize_chat_response
 from scattered_discovery.config import WorldConfig
 from scattered_discovery.envs.scattered_causal import ScatteredDiscoveryEnv
 from scattered_discovery.envs.scattered_dsl import (
@@ -12,6 +13,13 @@ from scattered_discovery.envs.scattered_dsl import (
 
 
 class DSLAndEnvTests(unittest.TestCase):
+    def test_normalize_chat_response_removes_visible_thinking(self) -> None:
+        response = normalize_chat_response(
+            "<think>try edge first</think>\n\nACTION: INTERVENE x00"
+        )
+        self.assertEqual(response.content, "ACTION: INTERVENE x00")
+        self.assertEqual(response.thinking, "try edge first")
+
     def test_parse_commit_set(self) -> None:
         action = parse_action_line(
             "ACTION: COMMIT [path(x00,x01,x02); path(x10,x11,x12)]"
@@ -118,6 +126,50 @@ class DSLAndEnvTests(unittest.TestCase):
         assert result.score is not None
         self.assertEqual(result.score.valid_unique_count, 0)
         self.assertEqual(result.score.unsupported_count, 1)
+
+    def test_test_action_requires_observed_candidate_edge(self) -> None:
+        config = WorldConfig(
+            num_branches=1,
+            branch_depth=2,
+            distractors_per_node=1,
+            noise_sigma=0.1,
+            base_budget=8,
+        )
+        env = ScatteredDiscoveryEnv(
+            config,
+            world_seed=1,
+            episode_seed=2,
+            dispersion=1.0,
+            protocol="single",
+            max_commit=1,
+        )
+        root = next(iter(env.world.initial_variables))
+        first = env.step(f"ACTION: INTERVENE {root}")
+        self.assertTrue(first.parse_ok)
+        self.assertGreater(len(env.observed_candidate_edges), 0)
+
+        observed_key = sorted(env.observed_candidate_edges)[0]
+        observed_edge = observed_key.removeprefix("edge:").replace("->", ",")
+        allowed = env.step(f"ACTION: TEST edge({observed_edge})")
+        self.assertTrue(allowed.parse_ok)
+        self.assertNotIn("not admissible", allowed.observation)
+
+        known = sorted(env.known_variables)
+        rejected = None
+        for src in known:
+            for dst in known:
+                if src == dst:
+                    continue
+                key = canonical_key(Edge(src, dst))
+                if key not in env.observed_candidate_edges:
+                    rejected = env.step(f"ACTION: TEST edge({src},{dst})")
+                    break
+            if rejected is not None:
+                break
+        self.assertIsNotNone(rejected)
+        assert rejected is not None
+        self.assertTrue(rejected.parse_ok)
+        self.assertIn("only allowed for observed candidate edges", rejected.observation)
 
     def test_public_state_hides_verifier_status_by_default(self) -> None:
         config = WorldConfig(

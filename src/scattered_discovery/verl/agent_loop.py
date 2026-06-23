@@ -5,6 +5,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from scattered_discovery.backends.base import split_visible_thinking
 from scattered_discovery.envs.factory import make_env
 from scattered_discovery.verl.qwen3_tokenization import observation_token_ids
 
@@ -83,17 +84,21 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
             response_ids.extend(token_ids)
             response_mask.extend([1] * len(token_ids))
 
-            assistant_text = self.tokenizer.decode(token_ids, skip_special_tokens=True)
+            raw_assistant_text = self.tokenizer.decode(
+                token_ids, skip_special_tokens=True
+            )
+            assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
             step = env.step(assistant_text)
             messages.append({"role": "assistant", "content": assistant_text})
-            transcript.append(
-                {
-                    "role": "assistant",
-                    "content": assistant_text,
-                    "action_text": step.action_text,
-                    "parse_ok": step.parse_ok,
-                }
-            )
+            assistant_item = {
+                "role": "assistant",
+                "content": assistant_text,
+                "action_text": step.action_text,
+                "parse_ok": step.parse_ok,
+            }
+            if thinking_text:
+                assistant_item["thinking"] = thinking_text
+            transcript.append(assistant_item)
             if step.done:
                 score = step.score
                 break

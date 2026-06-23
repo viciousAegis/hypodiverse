@@ -11,6 +11,7 @@ from scattered_discovery.backends.base import (
     ChatMessage,
     ChatOptions,
     ChatResponse,
+    normalize_chat_response,
 )
 
 
@@ -76,4 +77,4 @@ class OpenAICompatibleBackend(ChatBackend):
             thinking = ""
         if not isinstance(content, str) or not isinstance(thinking, str):
             raise RuntimeError(f"Unexpected chat completion message: {message!r}")
-        return ChatResponse(content=content, thinking=thinking)
+        return normalize_chat_response(content=content, thinking=thinking)

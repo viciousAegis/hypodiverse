@@ -14,7 +14,7 @@ max_examples: 50
 rollouts_per_spec: 4
 eval_workers: 16
 max_steps: 13
-max_response_length: 2048
+max_response_length: 4096
 temperature: 0.6
 top_p: 0.95
 request_timeout_s: 600

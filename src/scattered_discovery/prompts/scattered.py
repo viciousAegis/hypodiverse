@@ -20,8 +20,10 @@ ACTION: COMMIT [path(...); path(...)]
 
 Rules:
 - Variables are opaque symbols. Do not invent variables that are not known.
-- INTERVENE on a known variable exposes measured downstream effects and may reveal new variables.
-- TEST a known edge hypothesis to gather evidence for one adjacent edge.
+- INTERVENE on a known variable exposes measured downstream candidate edges and may reveal new variables.
+- TEST only observed candidate edges: after INTERVENE xA reveals xB, you may TEST edge(xA,xB) to gather more evidence for that adjacent edge.
+- TEST adds an evidence sample; it does not make the tested edge true or confirmed by itself.
+- Higher positive measurements support an edge more; low, near-zero, or negative measurements are poor evidence for that edge.
 - Final credit requires a complete path of the required length, backed by evidence for every adjacent edge gathered in this episode.
 - Shorter intermediate paths can help you explore, but they are not final answers.
 - Prefer exploring multiple promising branches when the budget allows.
@@ -39,6 +41,15 @@ def _public_state(env: ScatteredDiscoveryEnv, agent_config: AgentConfig) -> str:
     )
 
 
+def _measurement_legend(env: ScatteredDiscoveryEnv) -> str:
+    return (
+        "Measurement guide: true edges tend to produce measurements near "
+        f"{env.config.true_mean:.2f}; false or absent edges tend near "
+        f"{env.config.false_mean:.2f}. Low or negative measurements should not be "
+        "used as confirmed path edges."
+    )
+
+
 def initial_user_prompt(env: ScatteredDiscoveryEnv, agent_config: AgentConfig) -> str:
     protocol_line = (
         "This run uses single-answer protocol: finish with ACTION: COMMIT path(...)."
@@ -48,6 +59,7 @@ def initial_user_prompt(env: ScatteredDiscoveryEnv, agent_config: AgentConfig) -
     return (
         f"{protocol_line}\n"
         f"Final-answer hypotheses are directed paths with exactly {env.config.branch_depth + 1} variables.\n"
+        f"{_measurement_legend(env)}\n"
         "Write no visible reasoning; output only the ACTION line.\n"
         "Current public state:\n"
         f"{_public_state(env, agent_config)}\n\n"
@@ -63,6 +75,7 @@ def observation_prompt(
         "Updated public state:\n"
         f"{_public_state(env, agent_config)}\n\n"
         f"Required final path length: {env.config.branch_depth + 1} variables.\n"
+        f"{_measurement_legend(env)}\n"
         "Choose the next action. Return only one ACTION line."
     )
 
@@ -77,6 +90,7 @@ def final_commit_prompt(env: ScatteredDiscoveryEnv, agent_config: AgentConfig) -
         "Experiment budget or step limit has been reached. Submit your final answer now.\n"
         f"Use {commit_action}.\n\n"
         f"Required final path length: {env.config.branch_depth + 1} variables.\n"
+        f"{_measurement_legend(env)}\n"
         "Current public state:\n"
         f"{_public_state(env, agent_config)}"
     )
@@ -90,6 +104,7 @@ def repair_prompt(
         f"Parser error: {error}\n"
         "Do not explain. Output exactly one line matching one of the allowed action formats.\n"
         f"Required final path length: {env.config.branch_depth + 1} variables.\n"
+        f"{_measurement_legend(env)}\n"
         "Current public state:\n"
         f"{_public_state(env, agent_config)}"
     )
@@ -107,6 +122,7 @@ def finalizer_prompt(
         "choose the next action.\n"
         f"Parser status: {error}\n"
         f"Required final path length: {env.config.branch_depth + 1} variables.\n"
+        f"{_measurement_legend(env)}\n"
         "Current public state:\n"
         f"{_public_state(env, agent_config)}\n\n"
         "Prior hidden thinking trace:\n"

@@ -10,6 +10,7 @@ from scattered_discovery.backends.base import (
     ChatMessage,
     ChatOptions,
     ChatResponse,
+    normalize_chat_response,
 )
 
 
@@ -67,4 +68,4 @@ class OllamaBackend(ChatBackend):
         thinking = message.get("thinking", "")
         if not isinstance(content, str) or not isinstance(thinking, str):
             raise RuntimeError(f"Unexpected Ollama response: {raw!r}")
-        return ChatResponse(content=content, thinking=thinking)
+        return normalize_chat_response(content=content, thinking=thinking)

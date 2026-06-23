@@ -92,6 +92,7 @@ class ScatteredDiscoveryEnv:
         )
         self.evidence = EvidenceStore(self.evidence_model)
         self.known_variables: set[str] = set(self.world.initial_variables)
+        self.observed_candidate_edges: set[str] = set()
         self.accepted_claims: set[str] = set()
         self.rejected_claims: set[str] = set()
         self.budget = config.base_budget if budget is None else budget
@@ -191,6 +192,7 @@ class ScatteredDiscoveryEnv:
                 for branch in self.world.branches
             ],
             "known_variables": sorted(self.known_variables),
+            "observed_candidate_edges": sorted(self.observed_candidate_edges),
             "budget_used": self.initial_budget - self.budget,
             "invalid_actions": self.invalid_actions,
         }
@@ -212,9 +214,23 @@ class ScatteredDiscoveryEnv:
                 debug={"unknown_variables": sorted(unknown)},
             )
 
+        key = canonical_key(expr)
+        if not isinstance(expr, Edge) or key not in self.observed_candidate_edges:
+            self._charge(self.config.invalid_action_cost)
+            return StepResult(
+                observation=(
+                    "Action not admissible: TEST is only allowed for observed candidate edges. "
+                    "Use INTERVENE xA first, then TEST edge(xA,xB) only if xB appeared "
+                    "as a downstream candidate of xA."
+                ),
+                done=False,
+                parse_ok=True,
+                action_text=action_text,
+                debug={"unobserved_test_edge": key},
+            )
+
         self._charge(self.config.test_cost)
         info = self.world.classify(expr)
-        key = canonical_key(expr)
         signal = self.evidence_model.sample(self.rng, info.true)
         summary = self.evidence.update(key, signal)
         self._sync_claim_status(key, summary)
@@ -259,6 +275,7 @@ class ScatteredDiscoveryEnv:
             signal = self.evidence_model.sample(self.rng, is_true)
             edge = Edge(variable, target)
             key = canonical_key(edge)
+            self.observed_candidate_edges.add(key)
             summary = self.evidence.update(key, signal)
             self._sync_claim_status(key, summary)
             self.known_variables.add(target)
@@ -387,9 +404,15 @@ class ScatteredDiscoveryEnv:
     def _format_test_observation(
         self, expr: Expr, signal: float, summary: EvidenceSummary
     ) -> str:
+        midpoint = (self.config.true_mean + self.config.false_mean) / 2
+        evidence_note = (
+            "high_measurement_more_consistent_with_edge"
+            if signal >= midpoint
+            else "low_measurement_do_not_treat_as_confirmed_edge"
+        )
         return (
             f"TEST {format_expr(expr)}: measurement={signal:.2f}; "
-            f"samples_for_claim={summary.samples}."
+            f"samples_for_claim={summary.samples}; evidence_note={evidence_note}."
         )
 
     def _sync_claim_status(self, key: str, summary: EvidenceSummary) -> None:
