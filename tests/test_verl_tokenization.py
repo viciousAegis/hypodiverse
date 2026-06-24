@@ -1,6 +1,9 @@
 import unittest
 
-from scattered_discovery.verl.agent_loop import DiscoveryAgentLoop
+from scattered_discovery.verl.agent_loop import (
+    DiscoveryAgentLoop,
+    _add_dispersion_grouped_metrics,
+)
 from scattered_discovery.verl.qwen3_tokenization import fixed_base_message_token_ids
 
 
@@ -39,6 +42,28 @@ class VerlTokenizationTests(unittest.TestCase):
 
     def test_agent_loop_imports_without_verl_installed(self):
         self.assertIsNotNone(DiscoveryAgentLoop)
+
+    def test_dispersion_grouped_metrics_use_count_and_sum(self):
+        metrics = {
+            "terminal_reward": 1.0,
+            "valid_unique_count": 1.0,
+            "validity": 1.0,
+            "recovery": 0.25,
+            "parse_failures": 0.0,
+            "invalid_actions": 0.0,
+            "unsupported_count": 0.0,
+            "early_stop_consecutive_invalid": 0.0,
+            "reward_valid_hypothesis": 1.0,
+            "reward_clean_invalid_final": 0.0,
+        }
+        _add_dispersion_grouped_metrics(metrics, task={"dispersion": 0.25})
+
+        self.assertEqual(metrics["task_dispersion"], 0.25)
+        self.assertEqual(metrics["dispersion/0p25/count"], 1.0)
+        self.assertEqual(metrics["dispersion/0p25/terminal_reward_sum"], 1.0)
+        self.assertEqual(metrics["dispersion/0p25/recovery_sum"], 0.25)
+        self.assertEqual(metrics["dispersion/0/count"], 0.0)
+        self.assertEqual(metrics["dispersion/0/terminal_reward_sum"], 0.0)
 
 
 if __name__ == "__main__":

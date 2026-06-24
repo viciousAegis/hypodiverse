@@ -211,6 +211,19 @@ sbatch_verl_signal_pilot_grpo.slurm -> run_verl_pilot_grpo.sh -> configs/verl/ru
 sbatch_verl_pilot_grpo.slurm -> run_verl_pilot_grpo.sh -> configs/verl/runs/scattered_pilot.yaml -> run_verl_discovery_grpo.sh
 ```
 
+The AgentLoop logs aggregate environment metrics and dispersion-bucketed
+numerator/count metrics to W&B. For dispersion `0.25`, for example:
+
+```text
+dispersion/0p25/count
+dispersion/0p25/terminal_reward_sum
+dispersion/0p25/recovery_sum
+dispersion/0p25/validity_sum
+```
+
+Use `*_sum / count` for the conditional mean within a dispersion bucket. The
+raw numeric tag is also logged as `task_dispersion`.
+
 ## 4. Direct Shell Launch
 
 Use direct shell launch only inside an allocated interactive job or for debugging.

@@ -9,6 +9,20 @@ from scattered_discovery.backends.base import split_visible_thinking
 from scattered_discovery.envs.factory import make_env
 from scattered_discovery.verl.qwen3_tokenization import observation_token_ids
 
+DISPERSION_BUCKETS = (0.0, 0.25, 0.5, 0.75, 1.0)
+DISPERSION_GROUPED_METRICS = (
+    "terminal_reward",
+    "valid_unique_count",
+    "validity",
+    "recovery",
+    "parse_failures",
+    "invalid_actions",
+    "unsupported_count",
+    "early_stop_consecutive_invalid",
+    "reward_valid_hypothesis",
+    "reward_clean_invalid_final",
+)
+
 try:  # pragma: no cover - exercised on the cluster with veRL installed.
     from verl.experimental.agent_loop.agent_loop import (
         AgentLoopBase,
@@ -45,6 +59,37 @@ def _truncate_response_budget(
     if len(response_ids) <= max_response_length:
         return response_ids, response_mask
     return response_ids[:max_response_length], response_mask[:max_response_length]
+
+
+def _dispersion_label(value: float) -> str:
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    return text.replace(".", "p")
+
+
+def _task_dispersion(task: dict[str, Any]) -> float | None:
+    raw = task.get("dispersion")
+    if raw is None:
+        return None
+    return float(raw)
+
+
+def _add_dispersion_grouped_metrics(
+    metrics: dict[str, float],
+    *,
+    task: dict[str, Any],
+) -> None:
+    dispersion = _task_dispersion(task)
+    if dispersion is not None:
+        metrics["task_dispersion"] = dispersion
+
+    for bucket in DISPERSION_BUCKETS:
+        label = _dispersion_label(bucket)
+        active = dispersion is not None and abs(dispersion - bucket) < 1e-9
+        metrics[f"dispersion/{label}/count"] = 1.0 if active else 0.0
+        for key in DISPERSION_GROUPED_METRICS:
+            metrics[f"dispersion/{label}/{key}_sum"] = (
+                float(metrics.get(key, 0.0)) if active else 0.0
+            )
 
 
 @register("discovery_agent_loop")
@@ -175,6 +220,7 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
         }
         for key, value in score.breakdown.as_dict().items():
             metrics[f"reward_{key}"] = value
+        _add_dispersion_grouped_metrics(metrics, task=env_spec.get("task", {}))
 
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
