@@ -37,6 +37,7 @@ def build_specs(
     task_overrides: dict[str, Any] | None = None,
     dispersion_values: list[float] | None = None,
     world_values: dict[str, list[Any]] | None = None,
+    base_budget_from_branch_depth_overhead: int | None = None,
 ) -> list[EnvSpec]:
     task_overrides = task_overrides or {}
     if world_values:
@@ -66,6 +67,18 @@ def build_specs(
                     index=index,
                 )
                 task["world"] = _deep_merge(task.get("world") or {}, sampled_world)
+            if base_budget_from_branch_depth_overhead is not None:
+                world = task.get("world") or {}
+                if "branch_depth" not in world:
+                    raise ValueError(
+                        "base_budget_from_branch_depth_overhead requires "
+                        "branch_depth in world_values or task.world."
+                    )
+                world["base_budget"] = (
+                    2 * int(world["branch_depth"])
+                    + base_budget_from_branch_depth_overhead
+                )
+                task["world"] = world
         specs.append(
             EnvSpec(
                 env_type=env_type,
@@ -213,6 +226,18 @@ def _world_values_from_definition(
     return result
 
 
+def _base_budget_overhead_from_definition(definition: dict[str, Any]) -> int | None:
+    value = definition.get("base_budget_from_branch_depth_overhead")
+    if value is None:
+        return None
+    if str(definition["env_type"]) != "scattered_causal":
+        raise ValueError(
+            "base_budget_from_branch_depth_overhead is only supported for "
+            "scattered_causal."
+        )
+    return int(value)
+
+
 def build_rows_from_definition(
     definition: dict[str, Any],
 ) -> tuple[Path, list[dict[str, Any]]]:
@@ -221,6 +246,7 @@ def build_rows_from_definition(
         raise ValueError(f"Unsupported env_type: {env_type}")
     dispersion_values = _dispersion_values_from_definition(definition)
     world_values = _world_values_from_definition(definition)
+    base_budget_overhead = _base_budget_overhead_from_definition(definition)
     task = _task_from_definition(definition)
     if world_values:
         fixed_world = task.get("world") or {}
@@ -242,6 +268,7 @@ def build_rows_from_definition(
         task_overrides=task,
         dispersion_values=dispersion_values,
         world_values=world_values,
+        base_budget_from_branch_depth_overhead=base_budget_overhead,
     )
     return Path(definition["output"]), specs_to_rows(
         specs,

@@ -81,11 +81,11 @@ datasets:
     max_steps: 13
     seed: 301
     dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+    base_budget_from_branch_depth_overhead: 2
     world_values:
       num_branches: [3, 4, 5]
       branch_depth: [2, 3]
       distractors_per_node: [1, 2]
-      base_budget: [9, 11, 13]
     task:
       world:
         true_mean: 1.0
@@ -108,11 +108,11 @@ datasets:
     max_steps: 13
     seed: 1301
     dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
+    base_budget_from_branch_depth_overhead: 2
     world_values:
       num_branches: [3, 4, 5]
       branch_depth: [2, 3]
       distractors_per_node: [1, 2]
-      base_budget: [9, 11, 13]
     task:
       world:
         true_mean: 1.0

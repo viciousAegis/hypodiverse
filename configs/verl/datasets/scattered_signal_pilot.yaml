@@ -1,20 +1,21 @@
-# veRL dataset-generation preset: larger scattered-causal pilot splits.
-# Used by `scripts/cluster/run_verl_pilot_grpo.sh`.
+# veRL dataset-generation preset: allocation-conscious scattered-causal signal run.
+# This keeps the same task distribution as scattered_pilot.yaml but uses fewer
+# training prompts for the first meaningful GRPO baseline.
 defaults:
   agent_name: discovery_agent_loop
   protocol: single
-  max_steps: 13
+  max_steps: 10
   max_consecutive_invalid: 2
   max_commit: 1
   reward_profile: terminal_clean_invalid_bonus
 
 datasets:
-  - name: scattered_causal_pilot_train
-    data_source: scattered_causal_mixed
+  - name: scattered_causal_signal_train
+    data_source: scattered_causal_signal_mixed
     env_type: scattered_causal
-    output: data/verl/scattered_causal_pilot_train.parquet
-    count: 8192
-    seed: 6101
+    output: data/verl/scattered_causal_signal_train.parquet
+    count: 2048
+    seed: 6201
     dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
     base_budget_from_branch_depth_overhead: 2
     world_values:
@@ -35,12 +36,12 @@ datasets:
         include_hidden_debug_in_prompt: false
         max_evidence_items: 12
 
-  - name: scattered_causal_pilot_val
-    data_source: scattered_causal_mixed_val
+  - name: scattered_causal_signal_val
+    data_source: scattered_causal_signal_mixed_val
     env_type: scattered_causal
-    output: data/verl/scattered_causal_pilot_val.parquet
-    count: 1280
-    seed: 7101
+    output: data/verl/scattered_causal_signal_val.parquet
+    count: 320
+    seed: 7201
     dispersion_values: [0.0, 0.25, 0.5, 0.75, 1.0]
     base_budget_from_branch_depth_overhead: 2
     world_values:

@@ -138,10 +138,10 @@ world_values:
   num_branches: [3, 4, 5]
   branch_depth: [2, 3]
   distractors_per_node: [1, 2]
-  base_budget: [9, 11, 13]
+base_budget_from_branch_depth_overhead: 2
 ```
 
-These are not conflicts with `task.world`. The `task.world` block sets fixed defaults, and `world_values` overrides selected fields per generated row. This lets a single train or validation file contain a balanced mixture of graph sizes, budgets, and dispersion values.
+These are not conflicts with `task.world`. The `task.world` block sets fixed defaults, and `world_values` overrides selected fields per generated row. `base_budget_from_branch_depth_overhead: 2` then ties budget to depth with `base_budget = 2 * branch_depth + 2`. This lets a single train or validation file contain a balanced mixture of graph sizes, budgets, and dispersion values.
 
 The main difficulty knobs are:
 
@@ -175,6 +175,12 @@ This distinction is important. An intermediate true edge is not "wrong" as a cau
 The clean baseline uses `reward_profile: terminal_only`.
 
 In that profile, the important learning signal is terminal validity: reward comes from valid final hypotheses. This is the cleanest setup for testing GRPO behavior because it does not give much shaped reward for well-formed but wrong behavior.
+
+The practical scattered GRPO baseline uses
+`reward_profile: terminal_clean_invalid_bonus`. It keeps valid final hypotheses
+at reward `1.0`, but gives reward `0.2` for a parseable final commit that is
+invalid after an otherwise clean rollout. This should help action discipline
+without directly rewarding coverage.
 
 There is also support for shaped reward profiles, where format, admissibility, false commits, unsupported commits, duplicates, and budget can contribute to the reward. Those are practical guardrails when small models struggle to use the DSL, but they make the experimental story less clean.
 

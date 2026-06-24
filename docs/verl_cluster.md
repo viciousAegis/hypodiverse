@@ -160,10 +160,22 @@ configs/verl/runs/scattered_smoke.yaml
 Pilot run:
 
 ```bash
+sbatch scripts/cluster/sbatch_verl_signal_pilot_grpo.slurm
+```
+
+Signal-pilot training defaults live in:
+
+```text
+configs/verl/runs/scattered_signal_pilot.yaml
+```
+
+Full pilot run:
+
+```bash
 sbatch scripts/cluster/sbatch_verl_pilot_grpo.slurm
 ```
 
-Pilot training defaults live in:
+Full pilot training defaults live in:
 
 ```text
 configs/verl/runs/scattered_pilot.yaml
@@ -195,6 +207,7 @@ The `.slurm` scripts call the corresponding shell wrappers:
 
 ```text
 sbatch_verl_smoke_grpo.slurm -> run_verl_smoke_grpo.sh -> configs/verl/runs/scattered_smoke.yaml -> run_verl_discovery_grpo.sh
+sbatch_verl_signal_pilot_grpo.slurm -> run_verl_pilot_grpo.sh -> configs/verl/runs/scattered_signal_pilot.yaml -> run_verl_discovery_grpo.sh
 sbatch_verl_pilot_grpo.slurm -> run_verl_pilot_grpo.sh -> configs/verl/runs/scattered_pilot.yaml -> run_verl_discovery_grpo.sh
 ```
 

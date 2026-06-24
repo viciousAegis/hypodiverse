@@ -6,7 +6,7 @@ defaults:
   max_steps: 10
   max_consecutive_invalid: 2
   max_commit: 1
-  reward_profile: terminal_only
+  reward_profile: terminal_clean_invalid_bonus
 
 datasets:
   - name: scattered_causal_smoke_train

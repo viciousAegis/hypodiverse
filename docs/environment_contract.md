@@ -164,6 +164,13 @@ There is no reward component named coverage. The clean reward is:
 reward = valid_hypothesis_reward * valid_unique_count
 ```
 
+The scattered pilot can use `terminal_clean_invalid_bonus`, which keeps the
+terminal reward sparse but adds `clean_invalid_final = 0.2` when the model makes
+a parseable final `COMMIT`, finds no valid target, and had no parse failures or
+invalid actions earlier in the rollout. This is meant to distinguish clean
+wrong-final behavior from malformed exploration without adding dense per-step
+format shaping.
+
 Recovery is an evaluation metric computed from the verifier's target set:
 
 ```text
@@ -197,6 +204,7 @@ false_commit         penalty for false committed hypotheses
 non_final_commit     penalty for true but incomplete final submissions
 unsupported_commit   penalty for final-form hypotheses without enough support
 duplicate_commit     reserved; duplicates in set COMMIT zero final reward
+clean_invalid_final  small bonus for clean parseable invalid final answers
 budget               optional budget penalty
 ```
 

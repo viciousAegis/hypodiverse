@@ -27,6 +27,7 @@ Preset scattered-causal configs:
 
 ```text
 configs/verl/datasets/scattered_smoke.yaml    320 mixed train / 80 mixed val, easier pipeline run
+configs/verl/datasets/scattered_signal_pilot.yaml 2048 mixed train / 320 mixed val, first GRPO signal run
 configs/verl/datasets/scattered_pilot.yaml    8192 mixed train / 1280 mixed val, target pilot run
 ```
 
@@ -53,7 +54,7 @@ datasets:
       num_branches: [3, 4, 5]
       branch_depth: [2, 3]
       distractors_per_node: [1, 2]
-      base_budget: [9, 11, 13]
+    base_budget_from_branch_depth_overhead: 2
     task:
       world:
         noise_sigma: 0.35
@@ -121,6 +122,16 @@ Use this for clean GRPO-collapse and pass@K comparisons. Recovery is measured
 during eval as `valid_unique_count / target_count`; it is not a separate reward
 component.
 
+The scattered GRPO pilot uses `terminal_clean_invalid_bonus`, which keeps the
+same sparse terminal reward but gives a small reward for a clean invalid final
+commit:
+
+```text
+reward = 1.0 for a valid final hypothesis
+reward = 0.2 for a parseable COMMIT with no valid target, no parse failures, and no invalid actions
+reward = 0.0 otherwise
+```
+
 The opt-in `shaped`
 profile adds small syntax/admissibility rewards and small negative guardrails:
 
@@ -181,13 +192,14 @@ world_values:
   num_branches: [3, 4, 5]
   branch_depth: [2, 3, 4]
   distractors_per_node: [1, 2, 3]
-  base_budget: [9, 11, 13]
+base_budget_from_branch_depth_overhead: 2
 ```
 
 Use `dispersion_values` for shared-prefix/diversity structure and `world_values`
 for graph-shape/difficulty distribution. They are independent: one controls how
-branches overlap, the other controls graph size, depth, distractors, budget, and
-other `WorldConfig` fields.
+branches overlap, the other controls graph size, depth, distractors, and other
+`WorldConfig` fields. `base_budget_from_branch_depth_overhead: 2` derives
+`base_budget = 2 * branch_depth + 2`, so depth 2/3/4 worlds get budgets 6/8/10.
 
 Do not put the same field in both `world_values` and `task.world`. Sampled
 fields belong only in `world_values`; fixed fields belong only in `task.world`.

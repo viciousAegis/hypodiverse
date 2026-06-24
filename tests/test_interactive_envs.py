@@ -397,6 +397,46 @@ datasets:
             self.assertGreater(len({world["branch_depth"] for world in worlds}), 1)
             self.assertEqual({world["noise_sigma"] for world in worlds}, {0.3})
 
+    def test_yaml_dataset_config_can_tie_budget_to_branch_depth(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            output = tmp_path / "budget.jsonl"
+            config = tmp_path / "datasets.yaml"
+            config.write_text(
+                f"""
+defaults:
+  agent_name: discovery_agent_loop
+  protocol: single
+  max_steps: 10
+  max_commit: 1
+datasets:
+  - env_type: scattered_causal
+    data_source: scattered_causal_budget
+    output: {output}
+    count: 12
+    seed: 103
+    base_budget_from_branch_depth_overhead: 2
+    world_values:
+      branch_depth: [2, 3, 4]
+      num_branches: [3]
+      distractors_per_node: [1]
+""",
+                encoding="utf-8",
+            )
+            self.assertEqual(generate_from_config(config), [output])
+            rows = [json.loads(line) for line in output.read_text().splitlines()]
+            specs = [json.loads(row["env_spec_json"]) for row in rows]
+            worlds = [spec["task"]["world"] for spec in specs]
+            self.assertEqual(
+                {world["base_budget"] for world in worlds},
+                {6, 8, 10},
+            )
+            for world in worlds:
+                self.assertEqual(
+                    world["base_budget"],
+                    2 * world["branch_depth"] + 2,
+                )
+
     def test_yaml_dataset_config_rejects_overlapping_world_values(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)

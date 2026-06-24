@@ -587,6 +587,14 @@ class ScatteredCausalDiscoveryEnv:
         if duplicate_zeroed:
             terminal_breakdown = RewardBreakdown()
         else:
+            clean_invalid_final = (
+                self.config.clean_invalid_final_reward
+                if score.committed_count > 0
+                and score.valid_unique_count == 0
+                and self._parse_failures == 0
+                and self._env.invalid_actions == 0
+                else 0.0
+            )
             terminal_breakdown = self._breakdown.plus(
                 valid_hypothesis=self.config.valid_hypothesis_reward
                 * score.valid_unique_count,
@@ -597,6 +605,7 @@ class ScatteredCausalDiscoveryEnv:
                 non_final_commit=-self.config.non_final_penalty * score.non_final_count,
                 unsupported_commit=-self.config.unsupported_penalty
                 * score.unsupported_count,
+                clean_invalid_final=clean_invalid_final,
                 budget=-self.config.budget_penalty * budget_used,
             )
         valid_keys = score.valid_keys

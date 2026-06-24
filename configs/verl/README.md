@@ -40,6 +40,7 @@ entry supports:
 ```text
 datasets/all_envs.yaml          mixed env-family train/val generation
 datasets/scattered_smoke.yaml   small scattered-causal cluster smoke generation
+datasets/scattered_signal_pilot.yaml allocation-conscious scattered-causal signal generation
 datasets/scattered_pilot.yaml   larger mixed-dispersion scattered-causal pilot generation
 ```
 
@@ -63,7 +64,8 @@ reward_profile
 
 ```text
 runs/scattered_smoke.yaml   2-GPU smoke training defaults
-runs/scattered_pilot.yaml   4-GPU pilot training defaults
+runs/scattered_signal_pilot.yaml 4-GPU 32-step signal-pilot training defaults
+runs/scattered_pilot.yaml   4-GPU full pilot training defaults
 ```
 
 These control train/val file paths, batch sizes, rollout count, save/test
@@ -72,12 +74,15 @@ prefix. Environment variables passed through Slurm still override YAML values.
 
 Reward defaults are centralized in `src/scattered_discovery/rewards.py`.
 The default profile is `terminal_only` for clean GRPO/pass@K comparisons.
-Dataset entries can opt into `shaped` with `reward_profile: shaped`, or
-override individual values under `task.reward`.
+The scattered pilot uses `terminal_clean_invalid_bonus`, which adds a small
+reward for clean parseable invalid final commits. Dataset entries can also opt
+into `shaped` with `reward_profile: shaped`, or override individual values
+under `task.reward`.
 
 For `scattered_causal`, `task.world` maps directly to `WorldConfig`,
 `dispersion_values` cycles shared-prefix/diversity settings, `world_values`
-samples graph-shape fields such as branch count/depth/distractors/budget,
+samples graph-shape fields such as branch count/depth/distractors,
+`base_budget_from_branch_depth_overhead` can derive the budget from depth,
 `reward_profile`/`task.reward` controls reward values, and `task.agent` maps directly to
 `AgentConfig`, so all environment shape, evidence noise, action cost, reward,
 and prompt display controls live in YAML.

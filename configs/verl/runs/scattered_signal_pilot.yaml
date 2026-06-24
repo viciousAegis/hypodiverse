@@ -1,0 +1,25 @@
+# First meaningful but allocation-conscious scattered-causal GRPO baseline.
+# 2048 train prompts / train_batch_size 64 = 32 global GRPO steps.
+# ppo_mini_batch_size 32 gives about 64 actor optimizer updates.
+
+dataset_config: configs/verl/datasets/scattered_signal_pilot.yaml
+prepare_datasets: 1
+
+discovery_algo: grpo
+model_id: Qwen/Qwen3-4B
+download_model: 1
+attn_implementation: sdpa
+use_remove_padding: "False"
+train_file: data/verl/scattered_causal_signal_train.parquet
+val_file: data/verl/scattered_causal_signal_val.parquet
+
+n_gpus_per_node: 4
+train_batch_size: 64
+ppo_mini_batch_size: 32
+rollout_n: 6
+total_epochs: 1
+save_freq: 8
+test_freq: 4
+max_prompt_length: 2048
+max_response_length: 4096
+experiment_name_prefix: scattered_signal_pilot_qwen3_4b_r6

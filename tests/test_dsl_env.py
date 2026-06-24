@@ -2,6 +2,8 @@ import unittest
 
 from scattered_discovery.backends.base import normalize_chat_response
 from scattered_discovery.config import WorldConfig
+from scattered_discovery.envs.base import EnvSpec
+from scattered_discovery.envs.factory import make_env
 from scattered_discovery.envs.scattered_causal import ScatteredDiscoveryEnv
 from scattered_discovery.envs.scattered_dsl import (
     CommitAction,
@@ -97,6 +99,50 @@ class DSLAndEnvTests(unittest.TestCase):
         assert result.score is not None
         self.assertEqual(result.score.valid_unique_count, 1)
         self.assertIn(canonical_key(terminal), result.score.valid_keys)
+
+    def test_clean_invalid_final_bonus_requires_clean_rollout(self) -> None:
+        spec = EnvSpec(
+            env_type="scattered_causal",
+            task={
+                "world_seed": 1,
+                "episode_seed": 2,
+                "dispersion": 1.0,
+                "reward_profile": "terminal_clean_invalid_bonus",
+                "world": {
+                    "num_branches": 1,
+                    "branch_depth": 2,
+                    "distractors_per_node": 0,
+                    "noise_sigma": 0.1,
+                    "base_budget": 5,
+                },
+            },
+            protocol="single",
+            max_commit=1,
+            seed=1,
+        )
+        env = make_env(spec)
+        env.reset()
+        branch = env._env.world.branches[0]  # type: ignore[attr-defined]
+        final = env.step(f"ACTION: COMMIT path({','.join(branch.path)})")
+
+        self.assertIsNotNone(final.score)
+        assert final.score is not None
+        self.assertEqual(final.score.valid_unique_count, 0)
+        self.assertEqual(final.score.unsupported_count, 1)
+        self.assertEqual(final.score.breakdown.clean_invalid_final, 0.2)
+        self.assertEqual(final.score.reward, 0.2)
+
+        env = make_env(spec)
+        env.reset()
+        branch = env._env.world.branches[0]  # type: ignore[attr-defined]
+        env.step("not an action")
+        final = env.step(f"ACTION: COMMIT path({','.join(branch.path)})")
+
+        self.assertIsNotNone(final.score)
+        assert final.score is not None
+        self.assertEqual(final.score.valid_unique_count, 0)
+        self.assertEqual(final.score.breakdown.clean_invalid_final, 0.0)
+        self.assertEqual(final.score.reward, 0.0)
 
     def test_path_level_evidence_does_not_support_final_commit(self) -> None:
         config = WorldConfig(

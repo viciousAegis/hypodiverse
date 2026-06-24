@@ -35,6 +35,7 @@ Current dataset presets:
 ```text
 all_envs.yaml          mixed HypoSpace + scattered-causal train/val datasets
 scattered_smoke.yaml   small scattered-causal cluster smoke run
+scattered_signal_pilot.yaml allocation-conscious scattered-causal signal run
 scattered_pilot.yaml   larger scattered-causal mixed-dispersion pilot run
 ```
 

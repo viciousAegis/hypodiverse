@@ -225,4 +225,6 @@ For scattered-causal eval, keep the rollout `max_steps` at least as large as the
 largest visible `base_budget` in the evaluated split. Otherwise the model sees a
 larger remaining experiment budget than the outer rollout loop will actually
 allow. The scattered smoke preset uses `max_steps: 10` for `base_budget: 10`;
-the pilot presets use `max_steps: 13` for `base_budget: [9, 11, 13]`.
+the pilot presets derive `base_budget = 2 * branch_depth + 2`, giving budgets
+6/8/10 for depths 2/3/4. The signal-pilot training split uses `max_steps: 10`
+to match the largest tied budget.

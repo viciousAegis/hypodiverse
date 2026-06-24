@@ -28,6 +28,9 @@ class WorldConfig:
     non_final_penalty: float = SCATTERED_CAUSAL_REWARD.non_final_penalty
     unsupported_penalty: float = SCATTERED_CAUSAL_REWARD.unsupported_penalty
     budget_penalty: float = SCATTERED_CAUSAL_REWARD.budget_penalty
+    clean_invalid_final_reward: float = (
+        SCATTERED_CAUSAL_REWARD.clean_invalid_final_reward
+    )
 
 
 @dataclass(frozen=True)

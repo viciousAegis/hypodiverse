@@ -15,6 +15,7 @@ class RewardConfig:
     non_final_penalty: float
     unsupported_penalty: float
     budget_penalty: float
+    clean_invalid_final_reward: float
     format_reward: float
     admissible_reward: float
     commit_format_reward: float
@@ -41,6 +42,7 @@ class RewardConfig:
             "non_final_penalty": self.non_final_penalty,
             "unsupported_penalty": self.unsupported_penalty,
             "budget_penalty": self.budget_penalty,
+            "clean_invalid_final_reward": self.clean_invalid_final_reward,
         }
 
     def shaping_kwargs(self) -> dict[str, float]:
@@ -58,6 +60,20 @@ TERMINAL_ONLY_REWARD = RewardConfig(
     non_final_penalty=0.0,
     unsupported_penalty=0.0,
     budget_penalty=0.0,
+    clean_invalid_final_reward=0.0,
+    format_reward=0.0,
+    admissible_reward=0.0,
+    commit_format_reward=0.0,
+    invalid_action_penalty=0.0,
+)
+
+TERMINAL_CLEAN_INVALID_BONUS_REWARD = RewardConfig(
+    valid_hypothesis_reward=1.0,
+    false_penalty=0.0,
+    non_final_penalty=0.0,
+    unsupported_penalty=0.0,
+    budget_penalty=0.0,
+    clean_invalid_final_reward=0.2,
     format_reward=0.0,
     admissible_reward=0.0,
     commit_format_reward=0.0,
@@ -70,6 +86,7 @@ SHAPED_REWARD = RewardConfig(
     non_final_penalty=0.25,
     unsupported_penalty=0.25,
     budget_penalty=0.0,
+    clean_invalid_final_reward=0.0,
     format_reward=0.03,
     admissible_reward=0.02,
     commit_format_reward=0.05,
@@ -80,6 +97,7 @@ DEFAULT_REWARD_PROFILE = "terminal_only"
 
 REWARD_PROFILES: dict[str, RewardConfig] = {
     "terminal_only": TERMINAL_ONLY_REWARD,
+    "terminal_clean_invalid_bonus": TERMINAL_CLEAN_INVALID_BONUS_REWARD,
     "shaped": SHAPED_REWARD,
 }
 

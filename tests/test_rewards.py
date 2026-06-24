@@ -31,6 +31,10 @@ class RewardConfigTests(unittest.TestCase):
         self.assertEqual(reward_config_for_env("hypospace_causal").format_reward, 0.0)
         self.assertEqual(REWARD_PROFILES["shaped"].false_penalty, 0.5)
         self.assertEqual(REWARD_PROFILES["shaped"].format_reward, 0.03)
+        self.assertEqual(
+            REWARD_PROFILES["terminal_clean_invalid_bonus"].clean_invalid_final_reward,
+            0.2,
+        )
 
     def test_nested_task_reward_overrides_defaults(self):
         config = reward_config_from_task(
@@ -51,6 +55,16 @@ class RewardConfigTests(unittest.TestCase):
         self.assertEqual(config.non_final_penalty, 0.25)
         self.assertEqual(config.unsupported_penalty, 0.25)
         self.assertEqual(config.format_reward, 0.03)
+
+    def test_clean_invalid_bonus_profile_can_be_selected(self):
+        config = reward_config_from_task(
+            "scattered_causal",
+            {"reward_profile": "terminal_clean_invalid_bonus"},
+        )
+        self.assertEqual(config.valid_hypothesis_reward, 1.0)
+        self.assertEqual(config.clean_invalid_final_reward, 0.2)
+        self.assertEqual(config.false_penalty, 0.0)
+        self.assertEqual(config.format_reward, 0.0)
 
     def test_factory_passes_reward_config_to_env(self):
         env = make_env(
