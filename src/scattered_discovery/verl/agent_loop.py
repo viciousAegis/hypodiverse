@@ -241,3 +241,104 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 "transcript": transcript[:20],
             },
         )
+
+
+@register("causal_micro_lab_agent_loop")
+class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
+    async def run(self, sampling_params: dict[str, Any], **kwargs) -> Any:
+        if AgentLoopOutput is None or AgentLoopMetrics is None:
+            raise RuntimeError("CausalMicroLabAgentLoop requires veRL to be installed.")
+
+        env_spec_json = _as_text(kwargs["env_spec_json"])
+        env_spec = json.loads(env_spec_json)
+        env = make_env(env_spec)
+        max_response_length = int(self.rollout_config.response_length)
+        request_id = _as_text(kwargs.get("uid", uuid4().hex))
+
+        messages = [
+            {"role": "system", "content": env.system_prompt("verl")},
+            {"role": "user", "content": env.reset()},
+        ]
+        prompt_ids = await self.apply_chat_template(messages)
+        started = time.monotonic()
+        output = await self.server_manager.generate(
+            request_id=request_id,
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+        )
+        elapsed = time.monotonic() - started
+        response_ids = list(output.token_ids)
+        response_mask = [1] * len(response_ids)
+        raw_assistant_text = self.tokenizer.decode(
+            response_ids,
+            skip_special_tokens=True,
+        )
+        assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
+        step = env.step(assistant_text)
+        score = step.score if step.score is not None else env.force_finalize()
+
+        response_ids, response_mask = _truncate_response_budget(
+            response_ids,
+            response_mask,
+            max_response_length=max_response_length,
+        )
+        if not response_ids:
+            response_ids = [self.tokenizer.eos_token_id]
+            response_mask = [0]
+
+        diagnostics = env.diagnostics()
+        metrics = {
+            "terminal_reward": score.reward,
+            "num_turns": 1.0,
+            "parse_failures": float(score.parse_failures),
+            "invalid_actions": float(score.invalid_actions),
+            "valid_unique_count": float(score.valid_unique_count),
+            "valid_committed_count": float(score.valid_committed_count),
+            "validity": float(score.validity),
+            "uniqueness": float(score.uniqueness),
+            "final_version_space_size": float(
+                score.metrics.get("final_version_space_size", 0)
+            ),
+            "current_version_space_size": float(
+                score.metrics.get("current_version_space_size", 0)
+            ),
+            "recovery": float(score.metrics.get("recovery", 0.0)),
+            "parse_valid": float(score.metrics.get("parse_valid", 0.0)),
+            "syntax_valid": float(score.metrics.get("syntax_valid", 0.0)),
+            "evidence_consistent": float(
+                score.metrics.get("evidence_consistent", 0.0)
+            ),
+            "valid_mode_count": float(score.metrics.get("valid_mode_count", 0.0)),
+        }
+        for key, value in score.breakdown.as_dict().items():
+            metrics[f"reward_{key}"] = float(value)
+
+        transcript = [
+            {
+                "role": "assistant",
+                "content": assistant_text,
+                "parse_ok": step.parse_ok,
+            }
+        ]
+        if thinking_text:
+            transcript[0]["thinking"] = thinking_text
+
+        return AgentLoopOutput(
+            prompt_ids=prompt_ids,
+            response_ids=response_ids,
+            response_mask=response_mask,
+            reward_score=score.reward,
+            num_turns=1,
+            metrics=AgentLoopMetrics(
+                generate_sequences=elapsed,
+                tool_calls=0.0,
+                compute_score=0.0,
+                num_preempted=int(output.num_preempted or 0),
+            ),
+            extra_fields={
+                "reward_extra_info": metrics,
+                "score": score.as_dict(),
+                "diagnostics": diagnostics,
+                "transcript": transcript,
+            },
+        )

@@ -1,0 +1,9 @@
+# Local Boolean Causal Micro-Lab smoke defaults.
+output_dir: data/causal_micro_lab/smoke
+target_counts: [4, 8, 16]
+states_per_count: 2
+seed: 3101
+max_evidence: 8
+beam_width: 128
+targets_per_state: 2
+samples: 8

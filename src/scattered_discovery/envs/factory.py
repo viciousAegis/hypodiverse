@@ -5,6 +5,7 @@ from typing import Any
 
 from scattered_discovery.config import AgentConfig, WorldConfig
 from scattered_discovery.envs.base import DiscoveryEnv, EnvSpec
+from scattered_discovery.envs.causal_micro_lab import CausalMicroLabEnv
 from scattered_discovery.envs.hypospace_3d import HypoSpace3DEnv
 from scattered_discovery.envs.hypospace_boolean import HypoSpaceBooleanEnv
 from scattered_discovery.envs.hypospace_causal import HypoSpaceCausalEnv
@@ -18,6 +19,12 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
     task = dict(spec.task)
     reward_config = reward_config_from_task(spec.env_type, task)
     task.pop("reward", None)
+    if spec.env_type == "causal_micro_lab":
+        return CausalMicroLabEnv(
+            state=task.get("state"),
+            seed=int(task.get("seed", spec.seed)),
+            target_mode_count=int(task.get("target_mode_count", 4)),
+        )
     if spec.env_type == "scattered_causal":
         world_raw = task.pop("world", {})
         agent_raw = task.pop("agent", {})

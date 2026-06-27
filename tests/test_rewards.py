@@ -18,6 +18,7 @@ class RewardConfigTests(unittest.TestCase):
         self.assertEqual(
             set(REWARD_DEFAULTS),
             {
+                "causal_micro_lab",
                 "hypospace_causal",
                 "hypospace_boolean",
                 "hypospace_3d",

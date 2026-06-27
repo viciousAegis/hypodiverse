@@ -1,0 +1,10 @@
+# veRL-compatible Boolean Causal Micro-Lab smoke dataset.
+# Generate with:
+#   causal-micro-lab-build-verl-dataset --output data/causal_micro_lab/verl_smoke.jsonl --states-per-count 2
+agent_name: causal_micro_lab_agent_loop
+data_source: causal_micro_lab_smoke
+env_type: causal_micro_lab
+output: data/causal_micro_lab/verl_smoke.jsonl
+target_counts: [4, 8, 16]
+states_per_count: 2
+seed: 3101

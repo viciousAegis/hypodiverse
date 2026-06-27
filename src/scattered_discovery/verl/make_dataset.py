@@ -15,6 +15,7 @@ from scattered_discovery.envs.factory import spec_to_dict
 from scattered_discovery.rewards import REWARD_PROFILES
 
 ENV_TYPES = [
+    "causal_micro_lab",
     "scattered_causal",
     "hypospace_causal",
     "hypospace_boolean",

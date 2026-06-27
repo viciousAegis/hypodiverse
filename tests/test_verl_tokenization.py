@@ -1,6 +1,7 @@
 import unittest
 
 from scattered_discovery.verl.agent_loop import (
+    CausalMicroLabAgentLoop,
     DiscoveryAgentLoop,
     _add_dispersion_grouped_metrics,
 )
@@ -42,6 +43,7 @@ class VerlTokenizationTests(unittest.TestCase):
 
     def test_agent_loop_imports_without_verl_installed(self):
         self.assertIsNotNone(DiscoveryAgentLoop)
+        self.assertIsNotNone(CausalMicroLabAgentLoop)
 
     def test_dispersion_grouped_metrics_use_count_and_sum(self):
         metrics = {

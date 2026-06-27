@@ -94,4 +94,100 @@ hypospace_causal
 hypospace_boolean
 hypospace_3d
 scattered_causal
+causal_micro_lab
 ```
+
+## Boolean Causal Micro-Lab cluster runs
+
+Frozen causal micro-lab artifacts are generated from code on the cluster if the
+configured files are missing. The training pilot rows live under:
+
+```text
+data/causal_micro_lab/pilot/
+```
+
+The canonical eval rows for model-to-model comparisons live separately under:
+
+```text
+data/causal_micro_lab/canonical_eval/
+```
+
+The default causal micro-lab target counts are `M={4,8,16}`. The canonical eval
+preset uses the held-out `test` mode split from the same split seed as the pilot
+dataset, so it does not overlap the pilot train/val rows by hidden mode. The
+builder also avoids duplicate frozen state rows across output splits.
+
+The final paper eval file is:
+
+```text
+data/causal_micro_lab/canonical_eval/verl_test.jsonl
+```
+
+It contains 384 rows when generated with the default preset: 128 rows each for
+`M=4`, `M=8`, and `M=16`.
+
+Use the SFT files for supervised warmup and the veRL rows for GRPO/eval:
+
+```text
+sft_train.jsonl, sft_val.jsonl, sft_test.jsonl
+verl_train.jsonl, verl_val.jsonl, verl_test.jsonl
+```
+
+Launch validity-only GRPO on the cluster with:
+
+```bash
+sbatch scripts/cluster/sbatch_causal_micro_lab_validity_smoke.slurm
+sbatch scripts/cluster/sbatch_causal_micro_lab_validity_pilot.slurm
+```
+
+These use `causal_micro_lab_agent_loop`, which verifies rule-line outputs with
+the exact local verifier and logs parse/syntax/evidence-validity metrics through
+`reward_extra_info`. Dataset generation is controlled by the run config fields
+`causal_micro_lab_generate_dataset_if_missing`,
+`causal_micro_lab_dataset_output_dir`, and
+`causal_micro_lab_eval_output_dir`.
+
+Run grouped final eval with fixed answer budgets using:
+
+```bash
+EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k4.yaml sbatch scripts/cluster/sbatch_causal_micro_lab_eval.slurm
+EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k8.yaml sbatch scripts/cluster/sbatch_causal_micro_lab_eval.slurm
+EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k16.yaml sbatch scripts/cluster/sbatch_causal_micro_lab_eval.slurm
+```
+
+For the faster sharded version, use one SGLang server per GPU:
+
+```bash
+EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k4.yaml sbatch scripts/cluster/sbatch_causal_micro_lab_eval_sharded.slurm
+EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k8.yaml sbatch scripts/cluster/sbatch_causal_micro_lab_eval_sharded.slurm
+EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k16.yaml sbatch scripts/cluster/sbatch_causal_micro_lab_eval_sharded.slurm
+```
+
+The default sharded eval requests 4 GPUs and sets `eval_num_shards: 4`. Each
+shard runs its own single-GPU SGLang server on a separate port and evaluates
+every fourth row. Per-shard worker count is `256` for all `k` values. Eval
+response length is `4096` tokens so reasoning models have room to think before
+emitting the three final rule lines. On A100 80GB, the causal eval configs set
+`sglang_mem_fraction_static: 0.82` so SGLang can use substantially more KV/cache
+memory than the conservative scattered eval default. For single-GPU eval, the
+same `256` workers feed one SGLang server; override with `EVAL_WORKERS=128` or
+`SGLANG_MEM_FRACTION_STATIC=0.75` if the server reports memory pressure.
+
+Each run writes a per-sample `summary.json` and a grouped set-level
+`set_summary.json`. The grouped summary reports `pass_at_k`, exact coverage,
+budget-normalized coverage, effective mode count, family coverage, duplicate
+valid modes, unavoidable duplicate valid modes, and extra duplicate valid modes,
+sliced by `M`, separation bucket, and family bucket.
+
+For the cleanest k comparison, run the `k=16` config and use its prefix
+summaries:
+
+```text
+set_summary_k4.json
+set_summary_k8.json
+set_summary_k16.json
+```
+
+Those three files are computed from the same generated sample slots
+`sample0000` through `sample0015`, so `k=4` is the first four samples of the
+same `k=16` run rather than a separate stochastic eval.

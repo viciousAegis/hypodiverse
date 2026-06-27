@@ -1,0 +1,9 @@
+# Local Boolean Causal Micro-Lab pilot defaults.
+output_dir: data/causal_micro_lab/pilot
+target_counts: [4, 8, 16]
+states_per_count: 128
+seed: 4101
+max_evidence: 8
+beam_width: 256
+targets_per_state: 2
+samples: 8

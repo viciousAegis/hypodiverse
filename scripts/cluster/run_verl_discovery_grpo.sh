@@ -1,4 +1,3 @@
-```bash
 #!/usr/bin/env bash
 set -xeuo pipefail
 
@@ -105,6 +104,7 @@ ENTROPY_COEFF=${ENTROPY_COEFF:-0}
 ROLLOUT_TP=${ROLLOUT_TP:-1}
 ROLLOUT_GPU_MEM_UTIL=${ROLLOUT_GPU_MEM_UTIL:-0.55}
 ROLLOUT_N=${ROLLOUT_N:-4}
+DEFAULT_AGENT_LOOP=${DEFAULT_AGENT_LOOP:-discovery_agent_loop}
 
 ATTN_IMPLEMENTATION=${ATTN_IMPLEMENTATION:-sdpa}
 USE_REMOVE_PADDING=${USE_REMOVE_PADDING:-False}
@@ -178,7 +178,7 @@ ROLLOUT=(
   actor_rollout_ref.rollout.multi_turn.enable=True
   actor_rollout_ref.rollout.multi_turn.tokenization_sanity_check_mode=ignore_strippable
   actor_rollout_ref.rollout.agent.agent_loop_config_path=configs/verl/agent_loop.yaml
-  actor_rollout_ref.rollout.agent.default_agent_loop=discovery_agent_loop
+  actor_rollout_ref.rollout.agent.default_agent_loop="${DEFAULT_AGENT_LOOP}"
 )
 
 REF=(
@@ -219,4 +219,3 @@ python3 -m verl.trainer.main_ppo \
   "${REF[@]}" \
   "${TRAINER[@]}" \
   "$@"
-```

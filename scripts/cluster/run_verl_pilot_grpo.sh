@@ -19,9 +19,21 @@ fi
 CONFIG_EXPORTS="$("$PYTHON_BIN" scripts/cluster/load_run_config.py "$RUN_CONFIG")"
 eval "$CONFIG_EXPORTS"
 
-DATASET_CONFIG="${DATASET_CONFIG:?missing DATASET_CONFIG}"
 if [[ "${PREPARE_DATASETS:-1}" == "1" ]]; then
+  DATASET_CONFIG="${DATASET_CONFIG:?missing DATASET_CONFIG}"
   DATASET_CONFIG="$DATASET_CONFIG" scripts/cluster/prepare_verl_datasets.sh
+fi
+
+if [[ "${CML_GENERATE_DATASET_IF_MISSING:-0}" == "1" ]]; then
+  missing_cml_file=0
+  for cml_file in "${TRAIN_FILE:-}" "${VAL_FILE:-}"; do
+    if [[ -n "$cml_file" && "$cml_file" == data/causal_micro_lab/* && ! -f "$cml_file" ]]; then
+      missing_cml_file=1
+    fi
+  done
+  if [[ "$missing_cml_file" == "1" ]]; then
+    scripts/cluster/prepare_causal_micro_lab_dataset.sh
+  fi
 fi
 
 # shellcheck disable=SC1091

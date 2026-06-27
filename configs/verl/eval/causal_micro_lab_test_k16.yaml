@@ -1,0 +1,35 @@
+# Final Boolean Causal Micro-Lab grouped eval, k=16.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 1
+causal_micro_lab_dataset_preset: pilot
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/pilot
+causal_micro_lab_dataset_seed: 1
+causal_micro_lab_eval_preset: canonical_eval
+causal_micro_lab_eval_output_dir: data/causal_micro_lab/canonical_eval
+causal_micro_lab_eval_seed: 1
+causal_micro_lab_target_counts: 4,8,16
+causal_micro_lab_progress_every: 128
+
+model_id: Qwen/Qwen3-4B
+download_model: 1
+eval_file: data/causal_micro_lab/canonical_eval/verl_test.jsonl
+output_dir: results/causal_micro_lab_eval
+run_name: causal_micro_lab_test_k16
+
+rollouts_per_spec: 16
+prefix_ks: 4,8,16
+eval_workers: 256
+eval_num_shards: 4
+max_response_length: 4096
+temperature: 0.7
+top_p: 0.95
+request_timeout_s: 600
+transcripts: 0
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.82
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch --disable-cuda-graph"

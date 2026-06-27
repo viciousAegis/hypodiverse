@@ -1,3 +1,5 @@
 - name: discovery_agent_loop
   _target_: scattered_discovery.verl.agent_loop.DiscoveryAgentLoop
 
+- name: causal_micro_lab_agent_loop
+  _target_: scattered_discovery.verl.agent_loop.CausalMicroLabAgentLoop

@@ -1,0 +1,36 @@
+# Boolean Causal Micro-Lab validity-only GRPO pilot.
+# Training rows are generated under data/causal_micro_lab/pilot/.
+# Reusable model-comparison eval rows live under
+# data/causal_micro_lab/canonical_eval/.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 1
+causal_micro_lab_dataset_preset: pilot
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/pilot
+causal_micro_lab_dataset_seed: 1
+causal_micro_lab_eval_preset: canonical_eval
+causal_micro_lab_eval_output_dir: data/causal_micro_lab/canonical_eval
+causal_micro_lab_eval_seed: 1
+causal_micro_lab_target_counts: 4,8,16
+causal_micro_lab_progress_every: 128
+
+discovery_algo: grpo
+model_id: Qwen/Qwen3-4B
+download_model: 1
+attn_implementation: sdpa
+use_remove_padding: "False"
+default_agent_loop: causal_micro_lab_agent_loop
+
+train_file: data/causal_micro_lab/pilot/verl_train.jsonl
+val_file: data/causal_micro_lab/canonical_eval/verl_val.jsonl
+
+n_gpus_per_node: 4
+train_batch_size: 64
+ppo_mini_batch_size: 32
+rollout_n: 8
+total_epochs: 1
+save_freq: 8
+test_freq: 4
+max_prompt_length: 2048
+max_response_length: 256
+experiment_name_prefix: causal_micro_lab_validity_pilot_qwen3_4b_r8
