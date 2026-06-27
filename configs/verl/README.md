@@ -165,13 +165,18 @@ EVAL_CONFIG=configs/verl/eval/causal_micro_lab_test_k16.yaml sbatch scripts/clus
 
 The default sharded eval requests 4 GPUs and sets `eval_num_shards: 4`. Each
 shard runs its own single-GPU SGLang server on a separate port and evaluates
-every fourth row. Per-shard worker count is `256` for all `k` values. Eval
+every fourth row. Per-shard worker count is `96` for all `k` values. Eval
 response length is `4096` tokens so reasoning models have room to think before
 emitting the three final rule lines. On A100 80GB, the causal eval configs set
 `sglang_mem_fraction_static: 0.82` so SGLang can use substantially more KV/cache
-memory than the conservative scattered eval default. For single-GPU eval, the
-same `256` workers feed one SGLang server; override with `EVAL_WORKERS=128` or
-`SGLANG_MEM_FRACTION_STATIC=0.75` if the server reports memory pressure.
+memory than the conservative scattered eval default. The 96-worker default is
+chosen to stay just under the observed 4096-token KV-cache saturation point; if
+token usage stays below about 0.90, probe `EVAL_WORKERS=112`, and if SGLang logs
+`KV cache pool is full`, drop to `EVAL_WORKERS=80`.
+
+The causal eval Slurm wrappers default to `WANDB_PROJECT=scattered-discovery`.
+Set `WANDB_PROJECT=` to disable W&B for a run, or override it with another
+project name. Per-sample validity metrics and final set summaries are logged.
 
 Each run writes a per-sample `summary.json` and a grouped set-level
 `set_summary.json`. The grouped summary reports `pass_at_k`, exact coverage,

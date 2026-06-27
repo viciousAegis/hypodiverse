@@ -47,6 +47,7 @@ source scripts/cluster/prepend_venv_cuda_libs.sh
 
 export EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_test_k4.yaml}"
 export PYTHON_BIN="${PYTHON_BIN:-python3}"
+export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
 
 CONFIG_EXPORTS="$("$PYTHON_BIN" scripts/cluster/load_run_config.py "$EVAL_CONFIG")"
 eval "$CONFIG_EXPORTS"

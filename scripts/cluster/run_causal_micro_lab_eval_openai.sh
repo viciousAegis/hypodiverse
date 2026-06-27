@@ -41,13 +41,14 @@ OUTPUT_DIR="${OUTPUT_DIR:-results/causal_micro_lab_eval}"
 MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-4096}"
 ROLLOUTS_PER_SPEC="${ROLLOUTS_PER_SPEC:-4}"
 PREFIX_KS="${PREFIX_KS:-}"
-EVAL_WORKERS="${EVAL_WORKERS:-128}"
+EVAL_WORKERS="${EVAL_WORKERS:-96}"
 EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-0}"
 EVAL_NUM_SHARDS="${EVAL_NUM_SHARDS:-1}"
 TEMPERATURE="${TEMPERATURE:-0.7}"
 TOP_P="${TOP_P:-0.95}"
-REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-600}"
+REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-1800}"
 TRANSCRIPTS="${TRANSCRIPTS:-0}"
+WANDB_PROJECT="${WANDB_PROJECT:-}"
 
 SERVER_PID=""
 cleanup() {
@@ -123,6 +124,9 @@ if [[ -n "${MAX_EXAMPLES:-}" ]]; then
 fi
 if [[ "${TRANSCRIPTS:-0}" == "1" ]]; then
   ARGS+=(--transcripts)
+fi
+if [[ -n "$WANDB_PROJECT" ]]; then
+  ARGS+=(--wandb-project "$WANDB_PROJECT" --wandb-run-name "$RUN_NAME")
 fi
 
 "$PYTHON_BIN" -m scattered_discovery.envs.causal_micro_lab.eval "${ARGS[@]}" "$@"

@@ -35,6 +35,51 @@ def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _flatten_numeric(
+    data: dict[str, Any],
+    *,
+    prefix: str = "",
+) -> dict[str, float | int]:
+    flat: dict[str, float | int] = {}
+    for key, value in data.items():
+        name = f"{prefix}/{key}" if prefix else key
+        if isinstance(value, bool):
+            flat[name] = float(value)
+        elif isinstance(value, int | float):
+            flat[name] = value
+        elif isinstance(value, dict):
+            flat.update(_flatten_numeric(value, prefix=name))
+    return flat
+
+
+def _maybe_start_wandb(args: argparse.Namespace):
+    if not args.wandb_project:
+        return None
+    try:
+        import wandb
+    except ImportError as exc:
+        raise RuntimeError(
+            "W&B logging requires wandb. Install it in the eval environment."
+        ) from exc
+    return wandb.init(
+        project=args.wandb_project,
+        name=args.wandb_run_name or args.run_name,
+        config={
+            "provider": args.provider,
+            "model": args.model,
+            "input": args.input,
+            "rollouts_per_state": args.rollouts_per_state,
+            "workers": args.workers,
+            "shard_index": args.shard_index,
+            "num_shards": args.num_shards,
+            "max_response_length": args.num_predict,
+            "temperature": args.temperature,
+            "top_p": args.top_p,
+            "prefix_ks": args.prefix_ks,
+        },
+    )
+
+
 def load_states(path: str | Path) -> list[EvidenceState]:
     states = []
     for row in _read_jsonl(path):
@@ -93,6 +138,7 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
             [float(r["verification"]["is_currently_valid_mode"]) for r in records]
         ),
         "nonempty_output": _mean([float(bool(r["output"].strip())) for r in records]),
+        "request_error": _mean([float(bool(r.get("request_error"))) for r in records]),
         "model_seconds_total": sum(float(r["model_seconds"]) for r in records),
     }
 
@@ -269,10 +315,30 @@ def evaluate_states(
     def run_job(job: tuple[int, EvidenceState, int, str, list[ChatMessage]]) -> dict[str, Any]:
         state_index, state, rollout_index, prompt, messages = job
         started = time.monotonic()
-        response = backend.chat(messages)
         elapsed = time.monotonic() - started
-        verification = verify_output(response.content, state).as_dict()
         sample_id = f"{state.state_id}:sample{rollout_index:04d}"
+        try:
+            response = backend.chat(messages)
+            elapsed = time.monotonic() - started
+            output = response.content
+            thinking = response.thinking
+            verification = verify_output(output, state).as_dict()
+            request_error = None
+        except Exception as exc:  # noqa: BLE001
+            elapsed = time.monotonic() - started
+            output = ""
+            thinking = ""
+            request_error = f"{type(exc).__name__}: {exc}"
+            verification = {
+                "parse_valid": False,
+                "syntax_valid": False,
+                "evidence_consistent": False,
+                "semantic_mode_id": None,
+                "is_currently_valid_mode": False,
+                "prediction_signature": None,
+                "mechanism_family": None,
+                "error": request_error,
+            }
         record = {
             "sample_id": sample_id,
             "state_index": state_index,
@@ -280,8 +346,9 @@ def evaluate_states(
             "rollout_index": rollout_index,
             "model": model,
             "model_seconds": elapsed,
-            "output": response.content,
-            "thinking": response.thinking,
+            "output": output,
+            "thinking": thinking,
+            "request_error": request_error,
             "verification": verification,
             "state_metadata": {
                 "valid_mode_count": state.valid_mode_count,
@@ -338,6 +405,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     except OSError:
         pass
 
+    wandb_run = _maybe_start_wandb(args)
     records = evaluate_states(
         states=states,
         backend=backend,
@@ -350,6 +418,31 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     with episodes_path.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
+            if wandb_run is not None:
+                wandb_run.log(
+                    {
+                        "eval/parse_valid": float(
+                            record["verification"]["parse_valid"]
+                        ),
+                        "eval/syntax_valid": float(
+                            record["verification"]["syntax_valid"]
+                        ),
+                        "eval/evidence_consistent": float(
+                            record["verification"]["evidence_consistent"]
+                        ),
+                        "eval/currently_valid_mode": float(
+                            record["verification"]["is_currently_valid_mode"]
+                        ),
+                        "eval/nonempty_output": float(bool(record["output"].strip())),
+                        "eval/request_error": float(bool(record["request_error"])),
+                        "eval/model_seconds": float(record["model_seconds"]),
+                        "eval/state_index": int(record["state_index"]),
+                        "eval/rollout_index": int(record["rollout_index"]),
+                        "eval/M": int(
+                            record["state_metadata"]["valid_mode_count"]
+                        ),
+                    }
+                )
     summary = summarize_records(records)
     set_summary = summarize_grouped_records(records, states)
     summary.update(
@@ -392,10 +485,18 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             json.dumps(prefix_summary, indent=2, sort_keys=True),
             encoding="utf-8",
         )
+        if wandb_run is not None:
+            wandb_run.log(
+                _flatten_numeric(prefix_summary, prefix=f"set_summary_k{prefix_k}")
+            )
     (output_dir / "config.json").write_text(
         json.dumps(vars(args), indent=2, sort_keys=True),
         encoding="utf-8",
     )
+    if wandb_run is not None:
+        wandb_run.log(_flatten_numeric(summary, prefix="eval_summary"))
+        wandb_run.log(_flatten_numeric(set_summary, prefix="set_summary"))
+        wandb_run.finish()
     return output_dir, summary
 
 
@@ -428,6 +529,8 @@ def main() -> None:
     parser.add_argument("--request-timeout-s", type=float, default=180.0)
     parser.add_argument("--think", default=True)
     parser.add_argument("--transcripts", action="store_true")
+    parser.add_argument("--wandb-project")
+    parser.add_argument("--wandb-run-name")
     args = parser.parse_args()
     if args.rollouts_per_state < 1:
         raise SystemExit("--rollouts-per-state must be >= 1")
