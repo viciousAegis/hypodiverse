@@ -35,6 +35,12 @@ Run the causal micro-lab final eval on one GPU:
 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 ```
 
+Run one-GPU causal micro-lab LoRA SFT:
+
+```bash
+bash scripts/blackwell/run_causal_micro_lab_sft.sh
+```
+
 Useful overrides:
 
 ```bash
@@ -42,6 +48,22 @@ CUDA_VISIBLE_DEVICES=3 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 EVAL_WORKERS=96 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 MODEL_PATH=/scratch/$CSRID/open-discovery/checkpoints/my_model DOWNLOAD_MODEL=0 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 WANDB_PROJECT= bash scripts/blackwell/run_causal_micro_lab_eval.sh
+```
+
+Useful SFT overrides:
+
+```bash
+SFT_EPOCHS=2 bash scripts/blackwell/run_causal_micro_lab_sft.sh
+SFT_MAX_STEPS=20 RUN_NAME=causal_micro_lab_sft_smoke bash scripts/blackwell/run_causal_micro_lab_sft.sh
+SFT_BATCH_SIZE=4 SFT_GRAD_ACCUM=8 bash scripts/blackwell/run_causal_micro_lab_sft.sh
+SFT_RESUME_FROM_CHECKPOINT=/homes/$CSRID/open-discovery/checkpoints/causal_micro_lab_sft/causal_micro_lab_sft_qwen3_4b_lora/checkpoint-500 bash scripts/blackwell/run_causal_micro_lab_sft.sh
+```
+
+LoRA runs save both the adapter at `final/` and a merged serving model at
+`merged/`. Use the merged directory for SGLang eval:
+
+```bash
+MODEL_PATH=/homes/$CSRID/open-discovery/checkpoints/causal_micro_lab_sft/causal_micro_lab_sft_qwen3_4b_lora/merged DOWNLOAD_MODEL=0 THINK=true bash scripts/blackwell/run_causal_micro_lab_eval.sh
 ```
 
 The default eval config is `configs/verl/eval/causal_micro_lab_test_k16.yaml`.

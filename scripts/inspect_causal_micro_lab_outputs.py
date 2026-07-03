@@ -42,6 +42,10 @@ def compact_text(text: str, *, max_chars: int) -> str:
     return text[:max_chars].rstrip() + "\n... [truncated]"
 
 
+def normalized_output(record: dict[str, Any]) -> str:
+    return str(record.get("output") or "").strip()
+
+
 def print_record(record: dict[str, Any], *, max_chars: int, show_thinking: bool) -> None:
     verification = record.get("verification") or {}
     metadata = record.get("state_metadata") or {}
@@ -107,6 +111,12 @@ def main() -> None:
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--max-chars", type=int, default=1600)
     parser.add_argument("--show-thinking", action="store_true")
+    parser.add_argument(
+        "--top-outputs",
+        type=int,
+        default=0,
+        help="Print the most common normalized outputs and exit.",
+    )
     args = parser.parse_args()
 
     rows = read_jsonl(args.episodes)
@@ -114,6 +124,15 @@ def main() -> None:
     print(f"episodes: {len(rows)}")
     for category, count in sorted(categories.items()):
         print(f"{category}: {count}")
+
+    if args.top_outputs:
+        counts = Counter(normalized_output(record) for record in rows)
+        print(f"\nunique_outputs: {len(counts)}")
+        for output, count in counts.most_common(args.top_outputs):
+            print("=" * 88)
+            print(f"count: {count}")
+            print(compact_text(output, max_chars=args.max_chars))
+        return
 
     if args.category == "all":
         selected = rows
