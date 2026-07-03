@@ -11,10 +11,18 @@ if [[ -f scripts/env.sh ]]; then
   set -x
 fi
 
-export CUDA_HOME="${CLUSTER_CUDA_HOME:-/usr/local/software/cuda/12.1}"
-export CUDA_PATH="$CUDA_HOME"
-export PATH="${CUDA_HOME}/bin:${PATH}"
-export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+if [[ -n "${CLUSTER_CUDA_HOME:-}" ]]; then
+  export CUDA_HOME="$CLUSTER_CUDA_HOME"
+elif [[ -d /usr/local/cuda ]]; then
+  export CUDA_HOME=/usr/local/cuda
+elif [[ -d /usr/local/software/cuda/12.1 ]]; then
+  export CUDA_HOME=/usr/local/software/cuda/12.1
+fi
+if [[ -n "${CUDA_HOME:-}" ]]; then
+  export CUDA_PATH="$CUDA_HOME"
+  export PATH="${CUDA_HOME}/bin:${PATH}"
+  export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+fi
 
 EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_test_k4.yaml}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
