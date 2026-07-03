@@ -4,7 +4,7 @@ import argparse
 import json
 import statistics
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
@@ -299,6 +299,8 @@ def evaluate_states(
     workers: int = 1,
     output_transcripts: bool = False,
     on_record: Callable[[dict[str, Any]], None] | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
+    progress_interval_s: float = 60.0,
 ) -> list[dict[str, Any]]:
     jobs = []
     for state_index, state in enumerate(states):
@@ -372,15 +374,30 @@ def evaluate_states(
             records.append(record)
             if on_record is not None:
                 on_record(record)
+            if on_progress is not None:
+                on_progress(len(records), len(jobs))
     else:
         records = []
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(run_job, job) for job in jobs]
-            for future in as_completed(futures):
-                record = future.result()
-                records.append(record)
-                if on_record is not None:
-                    on_record(record)
+            pending = {executor.submit(run_job, job) for job in jobs}
+            last_progress = time.monotonic()
+            while pending:
+                done, pending = wait(
+                    pending,
+                    timeout=progress_interval_s,
+                    return_when=FIRST_COMPLETED,
+                )
+                for future in done:
+                    record = future.result()
+                    records.append(record)
+                    if on_record is not None:
+                        on_record(record)
+                now = time.monotonic()
+                if on_progress is not None and (
+                    done or now - last_progress >= progress_interval_s
+                ):
+                    on_progress(len(records), len(jobs))
+                    last_progress = now
     return sorted(
         records,
         key=lambda record: (int(record["state_index"]), int(record["rollout_index"])),
@@ -417,6 +434,22 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     wandb_run = _maybe_start_wandb(args)
     episodes_path = output_dir / "episodes.jsonl"
     partial_episodes_path = output_dir / "episodes.partial.jsonl"
+    total_jobs = len(states) * args.rollouts_per_state
+    if wandb_run is not None:
+        wandb_run.log(
+            {
+                "eval/jobs_total": total_jobs,
+                "eval/jobs_completed": 0,
+                "eval/jobs_pending": total_jobs,
+                "eval/progress_fraction": 0.0,
+            }
+        )
+    print(
+        "Starting causal micro-lab eval: "
+        f"states={len(states)} rollouts_per_state={args.rollouts_per_state} "
+        f"jobs={total_jobs} workers={args.workers}",
+        flush=True,
+    )
 
     with partial_episodes_path.open("w", encoding="utf-8") as partial_handle:
 
@@ -449,6 +482,23 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                     }
                 )
 
+        def on_progress(completed: int, total: int) -> None:
+            pending = total - completed
+            print(
+                f"causal micro-lab eval progress: {completed}/{total} "
+                f"completed ({pending} pending)",
+                flush=True,
+            )
+            if wandb_run is not None:
+                wandb_run.log(
+                    {
+                        "eval/jobs_total": total,
+                        "eval/jobs_completed": completed,
+                        "eval/jobs_pending": pending,
+                        "eval/progress_fraction": completed / total if total else 0.0,
+                    }
+                )
+
         records = evaluate_states(
             states=states,
             backend=backend,
@@ -457,6 +507,8 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             workers=args.workers,
             output_transcripts=args.transcripts,
             on_record=on_record,
+            on_progress=on_progress,
+            progress_interval_s=30.0,
         )
 
     with episodes_path.open("w", encoding="utf-8") as handle:
