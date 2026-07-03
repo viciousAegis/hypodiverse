@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from scattered_discovery.backends import (
     ChatBackend,
@@ -298,6 +298,7 @@ def evaluate_states(
     rollouts_per_state: int = 1,
     workers: int = 1,
     output_transcripts: bool = False,
+    on_record: Callable[[dict[str, Any]], None] | None = None,
 ) -> list[dict[str, Any]]:
     jobs = []
     for state_index, state in enumerate(states):
@@ -365,13 +366,21 @@ def evaluate_states(
         return record
 
     if workers <= 1:
-        records = [run_job(job) for job in jobs]
+        records = []
+        for job in jobs:
+            record = run_job(job)
+            records.append(record)
+            if on_record is not None:
+                on_record(record)
     else:
         records = []
         with ThreadPoolExecutor(max_workers=workers) as executor:
             futures = [executor.submit(run_job, job) for job in jobs]
             for future in as_completed(futures):
-                records.append(future.result())
+                record = future.result()
+                records.append(record)
+                if on_record is not None:
+                    on_record(record)
     return sorted(
         records,
         key=lambda record: (int(record["state_index"]), int(record["rollout_index"])),
@@ -406,18 +415,14 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         pass
 
     wandb_run = _maybe_start_wandb(args)
-    records = evaluate_states(
-        states=states,
-        backend=backend,
-        model=args.model,
-        rollouts_per_state=args.rollouts_per_state,
-        workers=args.workers,
-        output_transcripts=args.transcripts,
-    )
     episodes_path = output_dir / "episodes.jsonl"
-    with episodes_path.open("w", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    partial_episodes_path = output_dir / "episodes.partial.jsonl"
+
+    with partial_episodes_path.open("w", encoding="utf-8") as partial_handle:
+
+        def on_record(record: dict[str, Any]) -> None:
+            partial_handle.write(json.dumps(record, sort_keys=True) + "\n")
+            partial_handle.flush()
             if wandb_run is not None:
                 wandb_run.log(
                     {
@@ -443,6 +448,20 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                         ),
                     }
                 )
+
+        records = evaluate_states(
+            states=states,
+            backend=backend,
+            model=args.model,
+            rollouts_per_state=args.rollouts_per_state,
+            workers=args.workers,
+            output_transcripts=args.transcripts,
+            on_record=on_record,
+        )
+
+    with episodes_path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
     summary = summarize_records(records)
     set_summary = summarize_grouped_records(records, states)
     summary.update(
