@@ -6,7 +6,7 @@ set -x
 # This intentionally lives outside pyproject dependencies because torch/SGLang/
 # veRL versions are CUDA- and cluster-specific.
 
-if [[ -f /etc/profile.d/modules.sh ]]; then
+if [[ -f /etc/profile.d/modules.sh && -d /usr/local/software/cuda/12.1 ]]; then
   # shellcheck disable=SC1091
   . /etc/profile.d/modules.sh
   module purge
@@ -22,7 +22,16 @@ if [[ -f scripts/env.sh ]]; then
   set -x
 fi
 
-export CUDA_HOME="${CLUSTER_CUDA_HOME:-/usr/local/software/cuda/12.1}"
+if [[ -n "${CLUSTER_CUDA_HOME:-}" ]]; then
+  export CUDA_HOME="$CLUSTER_CUDA_HOME"
+elif [[ -d /usr/local/cuda ]]; then
+  export CUDA_HOME=/usr/local/cuda
+elif [[ -d /usr/local/software/cuda/12.1 ]]; then
+  export CUDA_HOME=/usr/local/software/cuda/12.1
+else
+  echo "Could not find CUDA. Set CLUSTER_CUDA_HOME to the CUDA install path." >&2
+  exit 1
+fi
 export CUDA_PATH="$CUDA_HOME"
 export PATH="${LOCAL_BIN_DIR:-$HOME/.local/bin}:$CUDA_HOME/bin:$PATH"
 GCC_LIBSTDCPP_DIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
