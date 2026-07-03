@@ -58,6 +58,15 @@ REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-1800}"
 TRANSCRIPTS="${TRANSCRIPTS:-0}"
 WANDB_PROJECT="${WANDB_PROJECT:-}"
 
+LOG_DIR="${EVAL_LOG_DIR:-$OUTPUT_DIR/$RUN_NAME/logs}"
+mkdir -p "$LOG_DIR"
+RUN_LOG_FILE="${RUN_LOG_FILE:-$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log}"
+exec > >(tee -a "$RUN_LOG_FILE") 2>&1
+echo "Run log: $RUN_LOG_FILE"
+echo "Run name: $RUN_NAME"
+echo "Output dir: $OUTPUT_DIR/$RUN_NAME"
+echo "Eval config: $EVAL_CONFIG"
+
 SERVER_PID=""
 cleanup() {
   if [[ -n "$SERVER_PID" ]]; then
@@ -142,3 +151,4 @@ fi
 echo "Eval output: $OUTPUT_DIR/$RUN_NAME"
 echo "Latest per-sample summary: $OUTPUT_DIR/$RUN_NAME/latest/summary.json"
 echo "Latest grouped set summary: $OUTPUT_DIR/$RUN_NAME/latest/set_summary.json"
+echo "Run log: $RUN_LOG_FILE"
