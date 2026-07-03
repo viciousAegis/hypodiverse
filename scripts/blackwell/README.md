@@ -35,6 +35,13 @@ Run the causal micro-lab final eval on one GPU:
 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 ```
 
+Run causal micro-lab eval directly through Transformers, without SGLang. This is
+slower, but useful for SFT smoke checks and avoids SGLang/TorchAO serving issues:
+
+```bash
+bash scripts/blackwell/run_causal_micro_lab_eval_hf.sh
+```
+
 Run one-GPU causal micro-lab LoRA SFT:
 
 ```bash
@@ -48,6 +55,7 @@ CUDA_VISIBLE_DEVICES=3 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 EVAL_WORKERS=96 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 MODEL_PATH=/scratch/$CSRID/open-discovery/checkpoints/my_model DOWNLOAD_MODEL=0 bash scripts/blackwell/run_causal_micro_lab_eval.sh
 WANDB_PROJECT= bash scripts/blackwell/run_causal_micro_lab_eval.sh
+MODEL_PATH=/homes/$CSRID/open-discovery/checkpoints/causal_micro_lab_sft/causal_micro_lab_sft_smoke/merged DOWNLOAD_MODEL=0 MAX_EXAMPLES=32 bash scripts/blackwell/run_causal_micro_lab_eval_hf.sh
 ```
 
 Useful SFT overrides:

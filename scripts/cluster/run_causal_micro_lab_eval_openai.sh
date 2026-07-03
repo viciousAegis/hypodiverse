@@ -104,34 +104,6 @@ PY
 if [[ "${SERVE_MODEL:-1}" == "1" ]]; then
   SGLANG_TP="${SGLANG_TP:-1}"
   SGLANG_MEM_FRACTION_STATIC="${SGLANG_MEM_FRACTION_STATIC:-0.55}"
-  if [[ "${CML_STRIP_TORCHAO_CONFIG:-1}" == "1" && -f "$MODEL_PATH/config.json" ]]; then
-    "$PYTHON_BIN" - "$MODEL_PATH/config.json" <<'PY'
-from __future__ import annotations
-
-import json
-import shutil
-import sys
-from pathlib import Path
-
-config_path = Path(sys.argv[1])
-payload = json.loads(config_path.read_text(encoding="utf-8"))
-removed = False
-for key in ("quantization_config", "torchao_config"):
-    value = payload.get(key)
-    if value is not None and "torchao" in json.dumps(value).lower():
-        payload.pop(key, None)
-        removed = True
-if removed:
-    backup = config_path.with_suffix(config_path.suffix + ".pre_cml_torchao")
-    if not backup.exists():
-        shutil.copy2(config_path, backup)
-    config_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    print(f"Stripped TorchAO config for SGLang eval: {config_path}")
-PY
-  fi
   read -r -a SGLANG_EXTRA <<< "${SGLANG_EXTRA_ARGS:-}"
   "$PYTHON_BIN" -m sglang.launch_server \
     --model-path "$MODEL_PATH" \

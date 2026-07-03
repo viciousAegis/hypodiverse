@@ -13,6 +13,7 @@ from typing import Any, Callable
 from scattered_discovery.backends import (
     ChatBackend,
     ChatMessage,
+    HuggingFaceBackend,
     OllamaBackend,
     OpenAICompatibleBackend,
 )
@@ -132,6 +133,14 @@ def build_backend(args: argparse.Namespace) -> ChatBackend:
             top_p=args.top_p,
             max_tokens=args.num_predict,
             request_timeout_s=args.request_timeout_s,
+            think=think,
+        )
+    if args.provider == "transformers":
+        return HuggingFaceBackend(
+            model=args.model,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            max_tokens=args.num_predict,
             think=think,
         )
     raise ValueError(f"Unsupported provider: {args.provider}")
@@ -593,7 +602,7 @@ def main() -> None:
     parser.add_argument("--run-name")
     parser.add_argument(
         "--provider",
-        choices=["ollama", "openai-compatible"],
+        choices=["ollama", "openai-compatible", "transformers"],
         default="ollama",
     )
     parser.add_argument("--model", default="qwen3:1.7b")
