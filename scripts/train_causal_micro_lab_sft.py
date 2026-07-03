@@ -219,6 +219,8 @@ def main() -> None:
             ],
         )
         model = get_peft_model(model, config)
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
         model.print_trainable_parameters()
 
     enable_thinking = True if args.enable_thinking_template else False
@@ -268,6 +270,8 @@ def main() -> None:
         if "eval_strategy" in inspect.signature(TrainingArguments).parameters
         else "evaluation_strategy"
     )
+    if "gradient_checkpointing_kwargs" in inspect.signature(TrainingArguments).parameters:
+        training_kwargs["gradient_checkpointing_kwargs"] = {"use_reentrant": False}
     training_kwargs[strategy_key] = "steps"
     if args.max_steps > 0:
         training_kwargs["max_steps"] = args.max_steps
