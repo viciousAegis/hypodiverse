@@ -14,7 +14,7 @@ def build_prompt(state: EvidenceState) -> str:
         "- Z1 rule can use: X1, X2, X3",
         "- Z2 rule can use: X1, X2, X3, Z1",
         "- Y rule can use: X1, X2, X3, Z1, Z2",
-        "For AND/OR/XOR, use two different inputs in the listed order.",
+        "For AND/OR/XOR, use two different inputs. Do not nest operators.",
         "",
         "Evidence:",
         "",
@@ -43,10 +43,15 @@ def build_prompt(state: EvidenceState) -> str:
     lines.extend(
         [
             "",
-            "Return exactly three lines, no extra text:",
-            "Z1 = OP(input[, input])",
-            "Z2 = OP(input[, input])",
-            "Y = OP(input[, input])",
+            "Return exactly three lines, no extra text.",
+            "Use this flat format:",
+            "Z1: OP input [input]",
+            "Z2: OP input [input]",
+            "Y: OP input [input]",
+            "Example:",
+            "Z1: AND X1 X2",
+            "Z2: OR X2 Z1",
+            "Y: XOR X3 Z1",
         ]
     )
     return "\n".join(lines)

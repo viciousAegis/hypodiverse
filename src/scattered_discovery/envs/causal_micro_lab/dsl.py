@@ -42,6 +42,9 @@ class Rule:
     def render(self) -> str:
         return f"{self.target} = {self.operator}({', '.join(self.inputs)})"
 
+    def render_flat(self) -> str:
+        return " ".join((self.target + ":", self.operator, *self.inputs))
+
 
 @dataclass(frozen=True)
 class Hypothesis:
@@ -79,6 +82,9 @@ class Hypothesis:
 
     def render_rules(self) -> str:
         return "\n".join(rule.render() for rule in self.rules)
+
+    def render_flat_rules(self) -> str:
+        return "\n".join(rule.render_flat() for rule in self.rules)
 
     def total_inputs(self) -> int:
         return sum(len(rule.inputs) for rule in self.rules)

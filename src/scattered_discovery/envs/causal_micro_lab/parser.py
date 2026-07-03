@@ -5,7 +5,9 @@ import re
 from typing import Any
 
 from scattered_discovery.envs.causal_micro_lab.dsl import (
+    BINARY_OPERATORS,
     CausalMicroLabError,
+    PARENTS,
     Rule,
     make_hypothesis,
 )
@@ -17,6 +19,10 @@ class HypothesisParseError(ValueError):
 
 _RULE_LINE_RE = re.compile(
     r"^\s*(Z1|Z2|Y)\s*(?:=|:=)\s*(COPY|NOT|AND|OR|XOR)\s*\(([^()]*)\)\s*$",
+    re.IGNORECASE,
+)
+_FLAT_RULE_LINE_RE = re.compile(
+    r"^\s*(Z1|Z2|Y)\s*(?::|=|:=)?\s+(COPY|NOT|AND|OR|XOR)\s+([A-Za-z0-9_\s,]+?)\s*$",
     re.IGNORECASE,
 )
 
@@ -45,6 +51,15 @@ def _strip_fence(text: str) -> str:
     return value
 
 
+def _canonicalize_inputs(target: str, operator: str, inputs: tuple[str, ...]) -> tuple[str, ...]:
+    if operator.upper() not in BINARY_OPERATORS:
+        return inputs
+    allowed = PARENTS[target.upper()]
+    if all(input_name in allowed for input_name in inputs):
+        return tuple(sorted(inputs, key=allowed.index))
+    return inputs
+
+
 def parse_hypothesis_rules(text: str):
     value = _strip_fence(text)
     rules = []
@@ -53,19 +68,33 @@ def parse_hypothesis_rules(text: str):
         if not line:
             continue
         match = _RULE_LINE_RE.match(line)
-        if match is None:
+        if match is not None:
+            target, operator, raw_inputs = match.groups()
+            inputs = tuple(
+                item.strip().upper()
+                for item in raw_inputs.split(",")
+                if item.strip()
+            )
+        else:
+            match = _FLAT_RULE_LINE_RE.match(line)
+            if match is None:
+                raise HypothesisParseError(f"invalid rule line: {raw_line!r}")
+            target, operator, raw_inputs = match.groups()
+            inputs = tuple(
+                item.strip().upper()
+                for item in re.split(r"[\s,]+", raw_inputs)
+                if item.strip()
+            )
+        target = target.upper()
+        operator = operator.upper()
+        inputs = _canonicalize_inputs(target, operator, inputs)
+        if operator in BINARY_OPERATORS and len(set(inputs)) != len(inputs):
             raise HypothesisParseError(f"invalid rule line: {raw_line!r}")
-        target, operator, raw_inputs = match.groups()
-        inputs = tuple(
-            item.strip().upper()
-            for item in raw_inputs.split(",")
-            if item.strip()
-        )
         try:
             rules.append(
                 Rule(
-                    target=target.upper(),
-                    operator=operator.upper(),
+                    target=target,
+                    operator=operator,
                     inputs=inputs,
                 )
             )
@@ -116,7 +145,20 @@ def parse_hypothesis_json(text: str, *, strict: bool = True):
         ):
             raise HypothesisParseError("rule inputs must be a string list")
         try:
-            rules.append(Rule(target=target, operator=operator, inputs=tuple(inputs)))
+            target_text = target.upper()
+            operator_text = operator.upper()
+            input_tuple = tuple(input_name.upper() for input_name in inputs)
+            rules.append(
+                Rule(
+                    target=target_text,
+                    operator=operator_text,
+                    inputs=_canonicalize_inputs(
+                        target_text,
+                        operator_text,
+                        input_tuple,
+                    ),
+                )
+            )
         except CausalMicroLabError as exc:
             raise HypothesisParseError(str(exc)) from exc
     try:

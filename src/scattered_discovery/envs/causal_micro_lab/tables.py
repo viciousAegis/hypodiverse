@@ -299,7 +299,7 @@ def sft_rows_for_states(
         ]
         rng.shuffle(valid)
         for target_mode_id in valid[: min(targets_per_state, len(valid))]:
-            target = table.modes_by_id[target_mode_id].canonical.render_rules()
+            target = table.modes_by_id[target_mode_id].canonical.render_flat_rules()
             rows.append(
                 {
                     "state_id": state.state_id,

@@ -38,5 +38,6 @@ export OUTPUT_DIR="${OUTPUT_DIR:-$ARTIFACT_ROOT/causal_micro_lab_eval}"
 export SGLANG_MEM_FRACTION_STATIC="${SGLANG_MEM_FRACTION_STATIC:-0.86}"
 export EVAL_WORKERS="${EVAL_WORKERS:-112}"
 export REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-2400}"
+export THINK="${THINK:-false}"
 
 scripts/cluster/run_causal_micro_lab_eval_openai.sh "$@"

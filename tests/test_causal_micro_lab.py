@@ -156,6 +156,16 @@ class CausalMicroLabTests(unittest.TestCase):
         rule_result = verify_output(rule_text, self.state, mode_table=self.table)
         self.assertTrue(rule_result.parse_valid)
         self.assertTrue(rule_result.is_currently_valid_mode)
+        flat_text = valid_mode.canonical.render_flat_rules()
+        flat_result = verify_output(flat_text, self.state, mode_table=self.table)
+        self.assertTrue(flat_result.parse_valid)
+        self.assertTrue(flat_result.is_currently_valid_mode)
+        reversed_binary = "Z1: AND X2 X1\nZ2: COPY X2\nY: COPY X3"
+        parsed = parse_hypothesis_rules(reversed_binary)
+        self.assertEqual(parsed.z1_rule.inputs, ("X1", "X2"))
+        no_paren_unary = "Z1 = NOT X2\nZ2: COPY X2\nY: COPY X3"
+        parsed = parse_hypothesis_rules(no_paren_unary)
+        self.assertEqual(parsed.z1_rule.inputs, ("X2",))
 
         with self.assertRaises(HypothesisParseError):
             parse_hypothesis_json('{"rules": []}')
@@ -200,7 +210,7 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertIn("maximum_separation", rows[0]["metadata"])
         sft_rows = sft_rows_for_states([self.state], targets_per_state=2, mode_table=self.table)
         self.assertEqual(len(sft_rows), 2)
-        self.assertIn("Z1 =", sft_rows[0]["response"])
+        self.assertIn("Z1:", sft_rows[0]["response"])
         self.assertNotIn('"rules"', sft_rows[0]["response"])
         verl_rows = verl_rows_for_states([self.state], mode_table=self.table)
         parsed = json.loads(verl_rows[0]["env_spec_json"])

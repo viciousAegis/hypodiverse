@@ -98,7 +98,21 @@ def load_states(path: str | Path) -> list[EvidenceState]:
     return states
 
 
+def _parse_think(value: Any) -> bool | str | None:
+    if value is None or isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"", "none", "null"}:
+        return None
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return str(value)
+
+
 def build_backend(args: argparse.Namespace) -> ChatBackend:
+    think = _parse_think(args.think)
     if args.provider == "ollama":
         return OllamaBackend(
             model=args.model,
@@ -107,7 +121,7 @@ def build_backend(args: argparse.Namespace) -> ChatBackend:
             top_p=args.top_p,
             num_predict=args.num_predict,
             request_timeout_s=args.request_timeout_s,
-            think=args.think,
+            think=think,
         )
     if args.provider == "openai-compatible":
         return OpenAICompatibleBackend(
@@ -118,6 +132,7 @@ def build_backend(args: argparse.Namespace) -> ChatBackend:
             top_p=args.top_p,
             max_tokens=args.num_predict,
             request_timeout_s=args.request_timeout_s,
+            think=think,
         )
     raise ValueError(f"Unsupported provider: {args.provider}")
 

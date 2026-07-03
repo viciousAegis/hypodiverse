@@ -26,6 +26,7 @@ class OpenAICompatibleBackend(ChatBackend):
     top_p: float = 0.9
     max_tokens: int = 1024
     request_timeout_s: float = 180.0
+    think: bool | str | None = None
 
     def chat(
         self, messages: list[ChatMessage], options: ChatOptions | None = None
@@ -35,6 +36,7 @@ class OpenAICompatibleBackend(ChatBackend):
             if options and options.num_predict is not None
             else self.max_tokens
         )
+        think = options.think if options and options.think is not None else self.think
         payload = {
             "model": self.model,
             "messages": [
@@ -45,6 +47,11 @@ class OpenAICompatibleBackend(ChatBackend):
             "top_p": self.top_p,
             "max_tokens": max_tokens,
         }
+        if isinstance(think, bool):
+            # vLLM and recent SGLang expose Qwen3 thinking control through
+            # chat_template_kwargs. Servers that ignore unknown OpenAI-compatible
+            # fields will simply keep their model default.
+            payload["chat_template_kwargs"] = {"enable_thinking": think}
         data = json.dumps(payload).encode("utf-8")
         headers = {"Content-Type": "application/json"}
         api_key = self.api_key or os.environ.get("OPENAI_API_KEY")

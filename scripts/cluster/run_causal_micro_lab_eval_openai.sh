@@ -57,6 +57,7 @@ TOP_P="${TOP_P:-0.95}"
 REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-1800}"
 TRANSCRIPTS="${TRANSCRIPTS:-0}"
 WANDB_PROJECT="${WANDB_PROJECT:-}"
+THINK="${THINK:-}"
 
 LOG_DIR="${EVAL_LOG_DIR:-$OUTPUT_DIR/$RUN_NAME/logs}"
 mkdir -p "$LOG_DIR"
@@ -138,6 +139,9 @@ if [[ -n "$PREFIX_KS" ]]; then
 fi
 if [[ -n "${MAX_EXAMPLES:-}" ]]; then
   ARGS+=(--max-examples "$MAX_EXAMPLES")
+fi
+if [[ -n "$THINK" ]]; then
+  ARGS+=(--think "$THINK")
 fi
 if [[ "${TRANSCRIPTS:-0}" == "1" ]]; then
   ARGS+=(--transcripts)
