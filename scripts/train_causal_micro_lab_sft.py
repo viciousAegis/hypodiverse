@@ -26,6 +26,25 @@ def read_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def strip_torchao_config(path: Path) -> None:
+    config_path = path / "config.json"
+    if not config_path.exists():
+        return
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    removed = False
+    for key in ("quantization_config", "torchao_config"):
+        value = payload.get(key)
+        if value is not None and "torchao" in json.dumps(value).lower():
+            payload.pop(key, None)
+            removed = True
+    if removed:
+        config_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        print(f"stripped_torchao_config={config_path}")
+
+
 def apply_template(
     tokenizer: Any,
     messages: list[dict[str, str]],
@@ -300,6 +319,7 @@ def main() -> None:
         merged_model = model.merge_and_unload()
         merged_model.save_pretrained(str(merged_dir), safe_serialization=True)
         tokenizer.save_pretrained(str(merged_dir))
+        strip_torchao_config(merged_dir)
         print(f"saved_merged={merged_dir}")
 
 
