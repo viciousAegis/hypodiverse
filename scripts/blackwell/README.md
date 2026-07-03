@@ -8,6 +8,14 @@ placed under:
 /scratch/$CSRID/open-discovery/
 ```
 
+For causal micro-lab eval, the Blackwell wrapper overrides the shared YAML's
+repo-relative paths so generated rows and results go to:
+
+```text
+/scratch/$CSRID/open-discovery/data/causal_micro_lab/
+/scratch/$CSRID/open-discovery/artifacts/causal_micro_lab_eval/
+```
+
 Set `CSRID` if your shell username is not your Cambridge CRSid:
 
 ```bash

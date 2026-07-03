@@ -25,6 +25,14 @@ export EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-0}"
 export SGLANG_PORT="${SGLANG_PORT:-30000}"
 export SGLANG_TP="${SGLANG_TP:-1}"
 
+# Keep generated causal rows and eval outputs off /homes. The shared eval YAMLs
+# intentionally use repo-relative defaults for local/Slurm runs, so Blackwell
+# pins them to the scratch tree unless the caller explicitly overrides them.
+export CML_DATASET_OUTPUT_DIR="${CML_DATASET_OUTPUT_DIR:-$DATA_ROOT/causal_micro_lab/pilot}"
+export CML_EVAL_OUTPUT_DIR="${CML_EVAL_OUTPUT_DIR:-$DATA_ROOT/causal_micro_lab/canonical_eval}"
+export EVAL_FILE="${EVAL_FILE:-$CML_EVAL_OUTPUT_DIR/verl_test.jsonl}"
+export OUTPUT_DIR="${OUTPUT_DIR:-$ARTIFACT_ROOT/causal_micro_lab_eval}"
+
 # RTX PRO 6000 Blackwell has 96GB VRAM. Leave some headroom for CUDA graphs,
 # kernels, NCCL, and driver allocations while allowing a large KV cache.
 export SGLANG_MEM_FRACTION_STATIC="${SGLANG_MEM_FRACTION_STATIC:-0.86}"
