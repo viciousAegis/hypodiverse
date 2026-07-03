@@ -17,6 +17,35 @@ if [[ -f scripts/cluster/prepend_venv_cuda_libs.sh ]]; then
   source scripts/cluster/prepend_venv_cuda_libs.sh
 fi
 
+if [[ "${SFT_DISABLE_LORA:-0}" != "1" ]]; then
+  "$VENV_DIR/bin/python" - <<'PY'
+from __future__ import annotations
+
+import importlib.metadata
+import sys
+
+from packaging.version import Version
+
+try:
+    torchao_version = importlib.metadata.version("torchao")
+except importlib.metadata.PackageNotFoundError:
+    raise SystemExit(0)
+
+if Version(torchao_version) < Version("0.16.0"):
+    print(
+        "Incompatible torchao for PEFT LoRA SFT: "
+        f"torchao=={torchao_version}, but PEFT requires torchao>=0.16.0.",
+        file=sys.stderr,
+    )
+    print(
+        'Fix inside the Blackwell repo with: source scripts/blackwell/env.sh && '
+        'source "$VENV_DIR/bin/activate" && uv pip install -U "torchao>=0.16.0"',
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+fi
+
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
 

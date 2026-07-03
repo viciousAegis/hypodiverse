@@ -120,6 +120,7 @@ retry_cmd uv pip install -e "$VERL_SRC[sglang]"
 SGLANG_SPEC="${SGLANG_SPEC:-sglang==0.5.8}"
 retry_cmd uv pip install "$SGLANG_SPEC"
 retry_cmd uv pip install "pyarrow>=16.0.0,<21.0.0"
+retry_cmd uv pip install -U "torchao>=0.16.0"
 
 # New installs may add nvidia/*/lib directories.
 # shellcheck disable=SC1091
