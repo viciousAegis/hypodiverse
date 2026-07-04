@@ -1,0 +1,40 @@
+# One-GPU Blackwell causal micro-lab GRPO smoke.
+# The Blackwell wrapper sets absolute data paths under BLACKWELL_RUN_ROOT.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 1
+causal_micro_lab_dataset_preset: smoke
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/smoke
+causal_micro_lab_dataset_seed: 1
+causal_micro_lab_target_counts: 4,8,16
+causal_micro_lab_progress_every: 16
+
+discovery_algo: grpo
+model_id: Qwen/Qwen3-4B
+download_model: 1
+attn_implementation: sdpa
+use_remove_padding: "False"
+default_agent_loop: causal_micro_lab_agent_loop
+
+train_file: data/causal_micro_lab/smoke/verl_train.jsonl
+val_file: data/causal_micro_lab/smoke/verl_val.jsonl
+
+n_gpus_per_node: 1
+train_batch_size: 4
+ppo_mini_batch_size: 2
+rollout_n: 2
+rollout_tp: 1
+rollout_gpu_mem_util: 0.55
+actor_micro_batch_size_per_gpu: 1
+rollout_log_prob_micro_batch_size_per_gpu: 1
+ref_log_prob_micro_batch_size_per_gpu: 1
+actor_lr: 1e-6
+kl_loss_coef: 0.001
+entropy_coeff: 0
+
+total_epochs: 1
+save_freq: 1
+test_freq: 1
+max_prompt_length: 2048
+max_response_length: 4096
+experiment_name_prefix: causal_micro_lab_blackwell_smoke_qwen3_4b_r2

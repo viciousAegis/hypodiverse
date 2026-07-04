@@ -174,6 +174,47 @@ class CausalMicroLabTests(unittest.TestCase):
         invalid = verify_output("Z1 = COPY(X1)", self.state, mode_table=self.table)
         self.assertFalse(invalid.parse_valid)
 
+    def test_env_rewards_nonempty_final_output(self):
+        env = make_env(
+            {
+                "env_type": "causal_micro_lab",
+                "task": {"state": state_rows([self.state])[0]},
+            }
+        )
+        invalid_nonempty = env.step("not a hypothesis")
+        self.assertEqual(invalid_nonempty.score.reward, 0.2)
+        self.assertEqual(
+            invalid_nonempty.score.breakdown.as_dict()["nonempty_output"],
+            0.2,
+        )
+        self.assertEqual(invalid_nonempty.metrics["nonempty_output"], 1.0)
+
+        empty_env = make_env(
+            {
+                "env_type": "causal_micro_lab",
+                "task": {"state": state_rows([self.state])[0]},
+            }
+        )
+        empty = empty_env.step("")
+        self.assertEqual(empty.score.reward, 0.0)
+        self.assertEqual(empty.score.breakdown.as_dict()["nonempty_output"], 0.0)
+        self.assertEqual(empty.metrics["nonempty_output"], 0.0)
+
+        valid_mode = self.table.modes_by_id[self.state.valid_mode_ids[0]]
+        valid_env = make_env(
+            {
+                "env_type": "causal_micro_lab",
+                "task": {
+                    "state": state_rows([self.state])[0],
+                    "nonempty_output_reward": 0.1,
+                },
+            }
+        )
+        valid = valid_env.step(valid_mode.canonical.render_flat_rules())
+        self.assertEqual(valid.score.reward, 1.0)
+        self.assertEqual(valid.score.breakdown.as_dict()["valid_hypothesis"], 1.0)
+        self.assertEqual(valid.score.breakdown.as_dict()["nonempty_output"], 0.0)
+
     def test_version_space_group_metrics_and_planner(self):
         self.assertEqual(
             set(valid_modes_for_evidence(self.state.evidence, mode_table=self.table)),

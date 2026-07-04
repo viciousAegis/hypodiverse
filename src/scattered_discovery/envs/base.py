@@ -16,6 +16,7 @@ class RewardBreakdown:
     unsupported_commit: float = 0.0
     duplicate_commit: float = 0.0
     clean_invalid_final: float = 0.0
+    nonempty_output: float = 0.0
     budget: float = 0.0
 
     @property
@@ -31,6 +32,7 @@ class RewardBreakdown:
             + self.unsupported_commit
             + self.duplicate_commit
             + self.clean_invalid_final
+            + self.nonempty_output
             + self.budget
         )
 
@@ -46,6 +48,7 @@ class RewardBreakdown:
             "unsupported_commit": self.unsupported_commit,
             "duplicate_commit": self.duplicate_commit,
             "clean_invalid_final": self.clean_invalid_final,
+            "nonempty_output": self.nonempty_output,
             "budget": self.budget,
             "total": self.total,
         }

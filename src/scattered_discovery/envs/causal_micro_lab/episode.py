@@ -37,6 +37,7 @@ class CausalMicroLabEnv:
         state: EvidenceState | dict[str, Any] | None = None,
         seed: int = 0,
         target_mode_count: int = 4,
+        nonempty_output_reward: float = 0.2,
     ) -> None:
         if isinstance(state, EvidenceState):
             self.state = state
@@ -48,6 +49,7 @@ class CausalMicroLabEnv:
         self._last_score: DiscoveryScore | None = None
         self._invalid_actions = 0
         self._parse_failures = 0
+        self._nonempty_output_reward = float(nonempty_output_reward)
 
     @property
     def done(self) -> bool:
@@ -76,12 +78,19 @@ class CausalMicroLabEnv:
                 parse_ok=False,
                 score=self._last_score,
             )
+        has_final_output = bool(model_text_or_action.strip())
         result = verify_output(model_text_or_action, self.state)
         if not result.parse_valid:
             self._parse_failures += 1
             self._invalid_actions += 1
+        nonempty_bonus = (
+            self._nonempty_output_reward
+            if has_final_output and not result.is_currently_valid_mode
+            else 0.0
+        )
         breakdown = RewardBreakdown(
-            valid_hypothesis=1.0 if result.is_currently_valid_mode else 0.0
+            valid_hypothesis=1.0 if result.is_currently_valid_mode else 0.0,
+            nonempty_output=nonempty_bonus,
         )
         score = DiscoveryScore(
             reward=breakdown.total,
@@ -99,6 +108,7 @@ class CausalMicroLabEnv:
                 "parse_valid": float(result.parse_valid),
                 "syntax_valid": float(result.syntax_valid),
                 "evidence_consistent": float(result.evidence_consistent),
+                "nonempty_output": float(has_final_output),
                 "final_version_space_size": self.state.valid_mode_count,
                 "current_version_space_size": self.state.valid_mode_count,
                 "recovery": 1.0 / self.state.valid_mode_count

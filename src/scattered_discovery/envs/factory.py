@@ -17,6 +17,7 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
     if isinstance(spec, dict):
         spec = EnvSpec(**spec)
     task = dict(spec.task)
+    nonempty_output_reward = float(task.pop("nonempty_output_reward", 0.2))
     reward_config = reward_config_from_task(spec.env_type, task)
     task.pop("reward", None)
     if spec.env_type == "causal_micro_lab":
@@ -24,6 +25,7 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
             state=task.get("state"),
             seed=int(task.get("seed", spec.seed)),
             target_mode_count=int(task.get("target_mode_count", 4)),
+            nonempty_output_reward=nonempty_output_reward,
         )
     if spec.env_type == "scattered_causal":
         world_raw = task.pop("world", {})
