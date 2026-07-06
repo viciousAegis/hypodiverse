@@ -240,15 +240,18 @@ def verl_rows_for_states(
     *,
     agent_name: str = "causal_micro_lab_agent_loop",
     data_source: str = "causal_micro_lab",
+    task_overrides: dict[str, Any] | None = None,
+    agent_overrides: dict[str, Any] | None = None,
     mode_table: ModeTable | None = None,
 ) -> list[dict[str, Any]]:
     table = mode_table or build_mode_table()
     rows = []
     for index, state in enumerate(states):
         state_record = state.to_record(mode_table=table, include_private=True)
+        task = {"state": state_record, **(task_overrides or {})}
         spec = EnvSpec(
             env_type="causal_micro_lab",
-            task={"state": state_record},
+            task=task,
             protocol="single",
             max_steps=1,
             max_commit=1,
@@ -269,6 +272,7 @@ def verl_rows_for_states(
                         "max_steps": spec.max_steps,
                         "max_commit": spec.max_commit,
                         "max_consecutive_invalid": spec.max_consecutive_invalid,
+                        "agent": agent_overrides or {},
                         "seed": spec.seed,
                     },
                     sort_keys=True,
@@ -348,6 +352,8 @@ def build_split_dataset(
     suffix: str = "jsonl",
     separation_buckets: tuple[str, ...] = (),
     source_splits: dict[str, str] | None = None,
+    verl_task_overrides: dict[str, Any] | None = None,
+    verl_agent_overrides: dict[str, Any] | None = None,
     include_verl: bool = True,
     progress: ProgressFn | None = None,
     progress_every: int = 25,
@@ -424,6 +430,8 @@ def build_split_dataset(
                 verl_rows_for_states(
                     states,
                     data_source=f"causal_micro_lab_{split}",
+                    task_overrides=verl_task_overrides,
+                    agent_overrides=verl_agent_overrides,
                     mode_table=table,
                 ),
                 root / f"verl_{split}.{suffix}",
@@ -442,6 +450,8 @@ def build_split_dataset(
         "suffix": suffix,
         "separation_buckets": list(separation_buckets),
         "include_verl": include_verl,
+        "verl_task_overrides": verl_task_overrides or {},
+        "verl_agent_overrides": verl_agent_overrides or {},
         "mode_split_counts": {
             split: len(split_ids[split])
             for split in SPLIT_NAMES

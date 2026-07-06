@@ -50,6 +50,7 @@ class CausalMicroLabEnv:
         parse_valid_reward: float = 0.0,
         syntax_valid_reward: float = 0.0,
         evidence_consistent_reward: float = 0.0,
+        valid_hypothesis_reward: float = 1.0,
     ) -> None:
         if isinstance(state, EvidenceState):
             self.state = state
@@ -66,6 +67,7 @@ class CausalMicroLabEnv:
         self._parse_valid_reward = float(parse_valid_reward)
         self._syntax_valid_reward = float(syntax_valid_reward)
         self._evidence_consistent_reward = float(evidence_consistent_reward)
+        self._valid_hypothesis_reward = float(valid_hypothesis_reward)
 
     @property
     def done(self) -> bool:
@@ -126,7 +128,9 @@ class CausalMicroLabEnv:
             else 0.0
         )
         breakdown = RewardBreakdown(
-            valid_hypothesis=1.0 if result.is_currently_valid_mode else 0.0,
+            valid_hypothesis=self._valid_hypothesis_reward
+            if result.is_currently_valid_mode
+            else 0.0,
             nonempty_output=nonempty_bonus,
             format=rule_marker_bonus,
             admissible=parse_bonus,

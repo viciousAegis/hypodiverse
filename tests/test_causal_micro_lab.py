@@ -207,12 +207,13 @@ class CausalMicroLabTests(unittest.TestCase):
                 "task": {
                     "state": state_rows([self.state])[0],
                     "nonempty_output_reward": 0.1,
+                    "valid_hypothesis_reward": 1.5,
                 },
             }
         )
         valid = valid_env.step(valid_mode.canonical.render_flat_rules())
-        self.assertEqual(valid.score.reward, 1.0)
-        self.assertEqual(valid.score.breakdown.as_dict()["valid_hypothesis"], 1.0)
+        self.assertEqual(valid.score.reward, 1.5)
+        self.assertEqual(valid.score.breakdown.as_dict()["valid_hypothesis"], 1.5)
         self.assertEqual(valid.score.breakdown.as_dict()["nonempty_output"], 0.0)
 
         invalid_mode = next(
@@ -295,9 +296,28 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertEqual(len(sft_rows), 2)
         self.assertIn("Z1:", sft_rows[0]["response"])
         self.assertNotIn('"rules"', sft_rows[0]["response"])
-        verl_rows = verl_rows_for_states([self.state], mode_table=self.table)
+        verl_rows = verl_rows_for_states(
+            [self.state],
+            task_overrides={
+                "nonempty_output_reward": 0.0,
+                "syntax_valid_reward": 0.2,
+                "valid_hypothesis_reward": 1.0,
+            },
+            agent_overrides={
+                "length_penalty_start": 3072,
+                "length_penalty_max": -0.2,
+                "mask_truncated": False,
+            },
+            mode_table=self.table,
+        )
         parsed = json.loads(verl_rows[0]["env_spec_json"])
         self.assertEqual(parsed["env_type"], "causal_micro_lab")
+        self.assertEqual(parsed["task"]["nonempty_output_reward"], 0.0)
+        self.assertEqual(parsed["task"]["syntax_valid_reward"], 0.2)
+        self.assertEqual(parsed["task"]["valid_hypothesis_reward"], 1.0)
+        self.assertEqual(parsed["agent"]["length_penalty_start"], 3072)
+        self.assertEqual(parsed["agent"]["length_penalty_max"], -0.2)
+        self.assertFalse(parsed["agent"]["mask_truncated"])
         metrics = oracle_group_eval(self.state, samples=4, mode_table=self.table)
         self.assertEqual(metrics["budget_normalized_coverage"], 1.0)
         with tempfile.TemporaryDirectory() as tmpdir:

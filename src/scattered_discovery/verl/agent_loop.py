@@ -82,14 +82,57 @@ def _causal_micro_lab_length_cap_penalty(
     *,
     response_length: int,
     max_response_length: int,
-    is_valid: bool,
-    penalty: float = 0.0,
+    soft_start: int | None = None,
+    max_penalty: float = -0.2,
 ) -> float:
-    if is_valid:
-        return 0.0
     if max_response_length <= 0:
         return 0.0
-    return penalty if response_length >= max_response_length else 0.0
+    start = soft_start if soft_start is not None else int(max_response_length * 0.75)
+    start = max(0, min(start, max_response_length))
+    if response_length <= start:
+        return 0.0
+    if response_length >= max_response_length:
+        return max_penalty
+    width = max(1, max_response_length - start)
+    fraction = (response_length - start) / width
+    return max_penalty * fraction
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return int(raw)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return float(raw)
+
+
+def _config_int(config: dict[str, Any], key: str, env_name: str, default: int) -> int:
+    if key in config and config[key] is not None:
+        return int(config[key])
+    return _env_int(env_name, default)
+
+
+def _config_float(
+    config: dict[str, Any], key: str, env_name: str, default: float
+) -> float:
+    if key in config and config[key] is not None:
+        return float(config[key])
+    return _env_float(env_name, default)
+
+
+def _config_bool(config: dict[str, Any], key: str, env_name: str, default: bool) -> bool:
+    if key in config and config[key] is not None:
+        return bool(config[key])
+    raw = os.environ.get(env_name)
+    if raw is None or raw == "":
+        return default
+    return raw == "1"
 
 
 def _dispersion_label(value: float) -> str:
@@ -284,6 +327,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
 
         env_spec_json = _as_text(kwargs["env_spec_json"])
         env_spec = json.loads(env_spec_json)
+        agent_config = env_spec.get("agent") or {}
         env = make_env(env_spec)
         max_response_length = int(self.rollout_config.response_length)
         request_id = _as_text(kwargs.get("uid", uuid4().hex))
@@ -313,18 +357,44 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
         assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
         step = env.step(assistant_text)
         score = step.score if step.score is not None else env.force_finalize()
+        length_penalty_start = _config_int(
+            agent_config,
+            "length_penalty_start",
+            "CAUSAL_MICRO_LAB_LENGTH_PENALTY_START",
+            int(max_response_length * 0.75),
+        )
+        length_penalty_max = _config_float(
+            agent_config,
+            "length_penalty_max",
+            "CAUSAL_MICRO_LAB_LENGTH_PENALTY_MAX",
+            -0.2,
+        )
         length_cap_penalty = _causal_micro_lab_length_cap_penalty(
             response_length=raw_response_length,
             max_response_length=max_response_length,
-            is_valid=bool(score.valid_committed_count),
+            soft_start=length_penalty_start,
+            max_penalty=length_penalty_max,
         )
         reward_score = score.reward + length_cap_penalty
+        response_length_cap_hit = (
+            raw_response_length >= max_response_length
+            if max_response_length > 0
+            else False
+        )
+        mask_truncated = _config_bool(
+            agent_config,
+            "mask_truncated",
+            "CAUSAL_MICRO_LAB_MASK_TRUNCATED",
+            False,
+        ) and response_length_cap_hit
 
         response_ids, response_mask = _truncate_response_budget(
             response_ids,
             response_mask,
             max_response_length=max_response_length,
         )
+        if mask_truncated:
+            response_mask = [0] * len(response_mask)
         if not response_ids:
             response_ids = [self.tokenizer.eos_token_id]
             response_mask = [0]
@@ -332,6 +402,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
         diagnostics = env.diagnostics()
         metrics = {
             "terminal_reward": reward_score,
+            "base_terminal_reward": float(score.reward),
             "num_turns": 1.0,
             "parse_failures": float(score.parse_failures),
             "invalid_actions": float(score.invalid_actions),
@@ -352,11 +423,11 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 score.metrics.get("evidence_consistent", 0.0)
             ),
             "valid_mode_count": float(score.metrics.get("valid_mode_count", 0.0)),
-            "response_length_cap_hit": float(
-                raw_response_length >= max_response_length
-                if max_response_length > 0
-                else False
-            ),
+            "response_length_raw": float(raw_response_length),
+            "response_length_penalty_start": float(length_penalty_start),
+            "response_length_penalty_max": float(length_penalty_max),
+            "response_length_cap_hit": float(response_length_cap_hit),
+            "response_length_loss_masked": float(mask_truncated),
             "reward_length_cap": float(length_cap_penalty),
         }
         for key, value in score.breakdown.as_dict().items():

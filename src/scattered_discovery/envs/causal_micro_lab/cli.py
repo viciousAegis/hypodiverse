@@ -61,6 +61,44 @@ PRESETS = {
 }
 
 
+def _reward_task_overrides(args: argparse.Namespace) -> dict[str, float]:
+    overrides = {}
+    for cli_name, task_name in (
+        ("nonempty_output_reward", "nonempty_output_reward"),
+        ("rule_marker_reward", "rule_marker_reward"),
+        ("parse_valid_reward", "parse_valid_reward"),
+        ("syntax_valid_reward", "syntax_valid_reward"),
+        ("evidence_consistent_reward", "evidence_consistent_reward"),
+        ("valid_hypothesis_reward", "valid_hypothesis_reward"),
+    ):
+        value = getattr(args, cli_name, None)
+        if value is not None:
+            overrides[task_name] = float(value)
+    return overrides
+
+
+def _agent_overrides(args: argparse.Namespace) -> dict[str, float | bool]:
+    overrides: dict[str, float | bool] = {}
+    if getattr(args, "length_penalty_start", None) is not None:
+        overrides["length_penalty_start"] = float(args.length_penalty_start)
+    if getattr(args, "length_penalty_max", None) is not None:
+        overrides["length_penalty_max"] = float(args.length_penalty_max)
+    if getattr(args, "mask_truncated", None) is not None:
+        overrides["mask_truncated"] = bool(args.mask_truncated)
+    return overrides
+
+
+def _add_agent_override_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--length-penalty-start", type=float)
+    parser.add_argument("--length-penalty-max", type=float)
+    parser.add_argument(
+        "--mask-truncated",
+        choices=("0", "1"),
+        type=int,
+        help="Whether cap-hit responses should have response_mask zeroed.",
+    )
+
+
 def build_tables_main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default="data/causal_micro_lab")
@@ -160,13 +198,24 @@ def build_verl_dataset_main() -> None:
     parser.add_argument("--states-per-count", type=int, default=8)
     parser.add_argument("--target-counts", default="4,8,16")
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--nonempty-output-reward", type=float)
+    parser.add_argument("--rule-marker-reward", type=float)
+    parser.add_argument("--parse-valid-reward", type=float)
+    parser.add_argument("--syntax-valid-reward", type=float)
+    parser.add_argument("--evidence-consistent-reward", type=float)
+    parser.add_argument("--valid-hypothesis-reward", type=float)
+    _add_agent_override_args(parser)
     args = parser.parse_args()
     states = generate_states(
         target_counts=tuple(int(item) for item in args.target_counts.split(",")),
         states_per_count=args.states_per_count,
         seed=args.seed,
     )
-    rows = verl_rows_for_states(states)
+    rows = verl_rows_for_states(
+        states,
+        task_overrides=_reward_task_overrides(args),
+        agent_overrides=_agent_overrides(args),
+    )
     path = write_table(rows, args.output)
     print(f"wrote {len(rows)} veRL rows to {path}")
 
@@ -191,6 +240,13 @@ def build_eval_rows_from_states_main() -> None:
     )
     parser.add_argument("--agent-name", default="causal_micro_lab_agent_loop")
     parser.add_argument("--data-source-prefix", default="causal_micro_lab")
+    parser.add_argument("--nonempty-output-reward", type=float)
+    parser.add_argument("--rule-marker-reward", type=float)
+    parser.add_argument("--parse-valid-reward", type=float)
+    parser.add_argument("--syntax-valid-reward", type=float)
+    parser.add_argument("--evidence-consistent-reward", type=float)
+    parser.add_argument("--valid-hypothesis-reward", type=float)
+    _add_agent_override_args(parser)
     args = parser.parse_args()
     from scattered_discovery.envs.causal_micro_lab.parser import parse_record_state
 
@@ -210,6 +266,8 @@ def build_eval_rows_from_states_main() -> None:
             states,
             agent_name=args.agent_name,
             data_source=data_source,
+            task_overrides=_reward_task_overrides(args),
+            agent_overrides=_agent_overrides(args),
         )
         path = write_table(rows, output_path)
         print(f"wrote {len(rows)} eval/RL rows to {path}")
@@ -265,6 +323,13 @@ def build_split_dataset_main() -> None:
         default="",
         help="Optional comma-separated bucket balance request, e.g. low,medium,high.",
     )
+    parser.add_argument("--nonempty-output-reward", type=float)
+    parser.add_argument("--rule-marker-reward", type=float)
+    parser.add_argument("--parse-valid-reward", type=float)
+    parser.add_argument("--syntax-valid-reward", type=float)
+    parser.add_argument("--evidence-consistent-reward", type=float)
+    parser.add_argument("--valid-hypothesis-reward", type=float)
+    _add_agent_override_args(parser)
     args = parser.parse_args()
     preset = PRESETS[args.preset]
     output_dir = args.output_dir or preset["output_dir"]
@@ -306,6 +371,8 @@ def build_split_dataset_main() -> None:
         suffix=args.suffix,
         separation_buckets=separation_buckets,
         source_splits=source_splits or None,
+        verl_task_overrides=_reward_task_overrides(args),
+        verl_agent_overrides=_agent_overrides(args),
         include_verl=not args.no_verl,
         progress=None if args.quiet else lambda message: print(message, flush=True),
         progress_every=max(1, args.progress_every),

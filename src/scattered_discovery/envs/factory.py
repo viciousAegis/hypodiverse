@@ -32,6 +32,7 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
     evidence_consistent_reward = float(
         task.pop("evidence_consistent_reward", 0.4 if dense_cml_reward else 0.0)
     )
+    valid_hypothesis_reward = float(task.pop("valid_hypothesis_reward", 1.0))
     reward_config = reward_config_from_task(spec.env_type, task)
     task.pop("reward", None)
     if spec.env_type == "causal_micro_lab":
@@ -44,6 +45,7 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
             parse_valid_reward=parse_valid_reward,
             syntax_valid_reward=syntax_valid_reward,
             evidence_consistent_reward=evidence_consistent_reward,
+            valid_hypothesis_reward=valid_hypothesis_reward,
         )
     if spec.env_type == "scattered_causal":
         world_raw = task.pop("world", {})

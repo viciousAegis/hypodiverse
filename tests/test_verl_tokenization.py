@@ -85,30 +85,33 @@ class VerlTokenizationTests(unittest.TestCase):
         self.assertEqual(metrics["dispersion/0/count"], 0.0)
         self.assertEqual(metrics["dispersion/0/terminal_reward_sum"], 0.0)
 
-    def test_causal_micro_lab_length_cap_penalty_only_hits_invalid_capped_outputs(self):
+    def test_causal_micro_lab_length_cap_penalty_uses_soft_overlong_zone(self):
         self.assertEqual(
             _causal_micro_lab_length_cap_penalty(
-                response_length=2048,
-                max_response_length=2048,
-                is_valid=False,
+                response_length=3072,
+                max_response_length=4096,
+                soft_start=3072,
+                max_penalty=-0.2,
             ),
             0.0,
         )
-        self.assertEqual(
+        self.assertAlmostEqual(
             _causal_micro_lab_length_cap_penalty(
-                response_length=2047,
-                max_response_length=2048,
-                is_valid=False,
+                response_length=3584,
+                max_response_length=4096,
+                soft_start=3072,
+                max_penalty=-0.2,
             ),
-            0.0,
+            -0.1,
         )
         self.assertEqual(
             _causal_micro_lab_length_cap_penalty(
-                response_length=2048,
-                max_response_length=2048,
-                is_valid=True,
+                response_length=4096,
+                max_response_length=4096,
+                soft_start=3072,
+                max_penalty=-0.2,
             ),
-            0.0,
+            -0.2,
         )
 
 
