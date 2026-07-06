@@ -235,6 +235,8 @@ class DiscoveryAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 num_preempted=num_preempted,
             ),
             extra_fields={
+                "min_global_steps": 0,
+                "max_global_steps": 0,
                 "reward_extra_info": metrics,
                 "score": score_dict,
                 "diagnostics": diagnostics,
@@ -336,6 +338,8 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 num_preempted=int(output.num_preempted or 0),
             ),
             extra_fields={
+                "min_global_steps": 0,
+                "max_global_steps": 0,
                 "reward_extra_info": metrics,
                 "score": score.as_dict(),
                 "diagnostics": diagnostics,
