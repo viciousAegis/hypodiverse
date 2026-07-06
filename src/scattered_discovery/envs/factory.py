@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+import os
 from typing import Any
 
 from scattered_discovery.config import AgentConfig, WorldConfig
@@ -17,7 +18,20 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
     if isinstance(spec, dict):
         spec = EnvSpec(**spec)
     task = dict(spec.task)
+    dense_cml_reward = os.environ.get("CAUSAL_MICRO_LAB_DENSE_REWARD", "0") == "1"
     nonempty_output_reward = float(task.pop("nonempty_output_reward", 0.2))
+    rule_marker_reward = float(
+        task.pop("rule_marker_reward", 0.05 if dense_cml_reward else 0.0)
+    )
+    parse_valid_reward = float(
+        task.pop("parse_valid_reward", 0.1 if dense_cml_reward else 0.0)
+    )
+    syntax_valid_reward = float(
+        task.pop("syntax_valid_reward", 0.2 if dense_cml_reward else 0.0)
+    )
+    evidence_consistent_reward = float(
+        task.pop("evidence_consistent_reward", 0.4 if dense_cml_reward else 0.0)
+    )
     reward_config = reward_config_from_task(spec.env_type, task)
     task.pop("reward", None)
     if spec.env_type == "causal_micro_lab":
@@ -26,6 +40,10 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
             seed=int(task.get("seed", spec.seed)),
             target_mode_count=int(task.get("target_mode_count", 4)),
             nonempty_output_reward=nonempty_output_reward,
+            rule_marker_reward=rule_marker_reward,
+            parse_valid_reward=parse_valid_reward,
+            syntax_valid_reward=syntax_valid_reward,
+            evidence_consistent_reward=evidence_consistent_reward,
         )
     if spec.env_type == "scattered_causal":
         world_raw = task.pop("world", {})

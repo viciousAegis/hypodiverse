@@ -215,6 +215,44 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertEqual(valid.score.breakdown.as_dict()["valid_hypothesis"], 1.0)
         self.assertEqual(valid.score.breakdown.as_dict()["nonempty_output"], 0.0)
 
+        invalid_mode = next(
+            mode
+            for mode in self.table.modes
+            if mode.mode_id not in self.state.valid_mode_ids
+        )
+        default_invalid_env = make_env(
+            {
+                "env_type": "causal_micro_lab",
+                "task": {"state": state_rows([self.state])[0]},
+            }
+        )
+        default_invalid = default_invalid_env.step(
+            invalid_mode.canonical.render_flat_rules()
+        )
+        self.assertEqual(default_invalid.score.reward, 0.2)
+        self.assertEqual(default_invalid.score.breakdown.as_dict()["format"], 0.0)
+
+        dense_env = make_env(
+            {
+                "env_type": "causal_micro_lab",
+                "task": {
+                    "state": state_rows([self.state])[0],
+                    "rule_marker_reward": 0.05,
+                    "parse_valid_reward": 0.1,
+                    "syntax_valid_reward": 0.2,
+                    "evidence_consistent_reward": 0.4,
+                },
+            }
+        )
+        dense = dense_env.step(invalid_mode.canonical.render_flat_rules())
+        dense_breakdown = dense.score.breakdown.as_dict()
+        self.assertFalse(dense.metrics["evidence_consistent"])
+        self.assertEqual(dense_breakdown["nonempty_output"], 0.2)
+        self.assertEqual(dense_breakdown["format"], 0.05)
+        self.assertEqual(dense_breakdown["admissible"], 0.1)
+        self.assertEqual(dense_breakdown["commit_format"], 0.2)
+        self.assertEqual(dense.score.reward, 0.55)
+
     def test_version_space_group_metrics_and_planner(self):
         self.assertEqual(
             set(valid_modes_for_evidence(self.state.evidence, mode_table=self.table)),

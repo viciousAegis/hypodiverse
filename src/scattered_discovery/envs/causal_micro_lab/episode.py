@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from scattered_discovery.envs.base import DiscoveryScore, DiscoveryStep, RewardBreakdown
@@ -28,6 +29,13 @@ def _default_state(seed: int = 0, target_mode_count: int = 4) -> EvidenceState:
     raise RuntimeError(f"could not find causal micro-lab state with M={target_mode_count}")
 
 
+def _has_rule_markers(text: str) -> bool:
+    return all(
+        re.search(rf"^\s*{target}\s*(?::|=|:=)", text, re.IGNORECASE | re.MULTILINE)
+        for target in ("Z1", "Z2", "Y")
+    )
+
+
 class CausalMicroLabEnv:
     protocol = "single"
 
@@ -38,6 +46,10 @@ class CausalMicroLabEnv:
         seed: int = 0,
         target_mode_count: int = 4,
         nonempty_output_reward: float = 0.2,
+        rule_marker_reward: float = 0.0,
+        parse_valid_reward: float = 0.0,
+        syntax_valid_reward: float = 0.0,
+        evidence_consistent_reward: float = 0.0,
     ) -> None:
         if isinstance(state, EvidenceState):
             self.state = state
@@ -50,6 +62,10 @@ class CausalMicroLabEnv:
         self._invalid_actions = 0
         self._parse_failures = 0
         self._nonempty_output_reward = float(nonempty_output_reward)
+        self._rule_marker_reward = float(rule_marker_reward)
+        self._parse_valid_reward = float(parse_valid_reward)
+        self._syntax_valid_reward = float(syntax_valid_reward)
+        self._evidence_consistent_reward = float(evidence_consistent_reward)
 
     @property
     def done(self) -> bool:
@@ -88,9 +104,34 @@ class CausalMicroLabEnv:
             if has_final_output and not result.is_currently_valid_mode
             else 0.0
         )
+        rule_marker_bonus = (
+            self._rule_marker_reward
+            if _has_rule_markers(model_text_or_action)
+            and not result.is_currently_valid_mode
+            else 0.0
+        )
+        parse_bonus = (
+            self._parse_valid_reward
+            if result.parse_valid and not result.is_currently_valid_mode
+            else 0.0
+        )
+        syntax_bonus = (
+            self._syntax_valid_reward
+            if result.syntax_valid and not result.is_currently_valid_mode
+            else 0.0
+        )
+        evidence_bonus = (
+            self._evidence_consistent_reward
+            if result.evidence_consistent and not result.is_currently_valid_mode
+            else 0.0
+        )
         breakdown = RewardBreakdown(
             valid_hypothesis=1.0 if result.is_currently_valid_mode else 0.0,
             nonempty_output=nonempty_bonus,
+            format=rule_marker_bonus,
+            admissible=parse_bonus,
+            commit_format=syntax_bonus,
+            clean_invalid_final=evidence_bonus,
         )
         score = DiscoveryScore(
             reward=breakdown.total,
@@ -109,6 +150,7 @@ class CausalMicroLabEnv:
                 "syntax_valid": float(result.syntax_valid),
                 "evidence_consistent": float(result.evidence_consistent),
                 "nonempty_output": float(has_final_output),
+                "rule_markers": float(_has_rule_markers(model_text_or_action)),
                 "final_version_space_size": self.state.valid_mode_count,
                 "current_version_space_size": self.state.valid_mode_count,
                 "recovery": 1.0 / self.state.valid_mode_count
