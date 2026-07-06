@@ -65,4 +65,29 @@ echo "Train file: $TRAIN_FILE"
 echo "Val file: $VAL_FILE"
 echo "GPU: $CUDA_VISIBLE_DEVICES"
 
-scripts/cluster/run_verl_pilot_grpo.sh "$@"
+DEFAULT_HYDRA_ARGS=()
+has_attention_backend=0
+has_calculate_log_probs=0
+for arg in "$@"; do
+  case "$arg" in
+    *actor_rollout_ref.rollout.engine_kwargs.sglang.attention_backend=*)
+      has_attention_backend=1
+      ;;
+    *actor_rollout_ref.rollout.calculate_log_probs=*)
+      has_calculate_log_probs=1
+      ;;
+  esac
+done
+
+if [[ "$has_attention_backend" == "0" ]]; then
+  DEFAULT_HYDRA_ARGS+=(
+    +actor_rollout_ref.rollout.engine_kwargs.sglang.attention_backend=flashinfer
+  )
+fi
+if [[ "$has_calculate_log_probs" == "0" ]]; then
+  DEFAULT_HYDRA_ARGS+=(
+    actor_rollout_ref.rollout.calculate_log_probs=False
+  )
+fi
+
+scripts/cluster/run_verl_pilot_grpo.sh "${DEFAULT_HYDRA_ARGS[@]}" "$@"
