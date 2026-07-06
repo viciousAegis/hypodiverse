@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any
 from uuid import uuid4
@@ -61,12 +62,28 @@ def _truncate_response_budget(
     return response_ids[:max_response_length], response_mask[:max_response_length]
 
 
+def _apply_chat_template_no_thinking(tokenizer: Any, messages: list[dict[str, str]]) -> list[int]:
+    kwargs: dict[str, Any] = {
+        "add_generation_prompt": True,
+        "tokenize": True,
+        "enable_thinking": False,
+    }
+    try:
+        token_ids = tokenizer.apply_chat_template(messages, **kwargs)
+    except TypeError:
+        kwargs.pop("enable_thinking", None)
+        token_ids = tokenizer.apply_chat_template(messages, **kwargs)
+    if hasattr(token_ids, "tolist"):
+        token_ids = token_ids.tolist()
+    return list(token_ids)
+
+
 def _causal_micro_lab_length_cap_penalty(
     *,
     response_length: int,
     max_response_length: int,
     is_valid: bool,
-    penalty: float = -0.1,
+    penalty: float = 0.0,
 ) -> float:
     if is_valid:
         return 0.0
@@ -275,7 +292,10 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
             {"role": "system", "content": env.system_prompt("verl")},
             {"role": "user", "content": env.reset()},
         ]
-        prompt_ids = await self.apply_chat_template(messages)
+        if os.environ.get("CAUSAL_MICRO_LAB_DISABLE_THINKING", "0") == "1":
+            prompt_ids = _apply_chat_template_no_thinking(self.tokenizer, messages)
+        else:
+            prompt_ids = await self.apply_chat_template(messages)
         started = time.monotonic()
         output = await self.server_manager.generate(
             request_id=request_id,

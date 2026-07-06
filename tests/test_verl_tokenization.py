@@ -4,6 +4,7 @@ from scattered_discovery.verl.agent_loop import (
     CausalMicroLabAgentLoop,
     DiscoveryAgentLoop,
     _add_dispersion_grouped_metrics,
+    _apply_chat_template_no_thinking,
     _causal_micro_lab_length_cap_penalty,
 )
 from scattered_discovery.verl.qwen3_tokenization import fixed_base_message_token_ids
@@ -11,10 +12,16 @@ from scattered_discovery.verl.qwen3_tokenization import fixed_base_message_token
 
 class FakeTokenizer:
     eos_token_id = 0
+    last_enable_thinking = None
 
     def apply_chat_template(
-        self, messages, add_generation_prompt=False, tokenize=False
+        self,
+        messages,
+        add_generation_prompt=False,
+        tokenize=False,
+        enable_thinking=None,
     ):
+        self.last_enable_thinking = enable_thinking
         rendered = "".join(
             f"<|im_start|>{message['role']}\n{message['content']}<|im_end|>\n"
             for message in messages
@@ -46,6 +53,16 @@ class VerlTokenizationTests(unittest.TestCase):
         self.assertIsNotNone(DiscoveryAgentLoop)
         self.assertIsNotNone(CausalMicroLabAgentLoop)
 
+    def test_no_thinking_chat_template_sets_qwen_flag(self):
+        tokenizer = FakeTokenizer()
+        token_ids = _apply_chat_template_no_thinking(
+            tokenizer,
+            [{"role": "user", "content": "Return the answer."}],
+        )
+        self.assertEqual(tokenizer.last_enable_thinking, False)
+        decoded = "".join(chr(token_id) for token_id in token_ids)
+        self.assertIn("<|im_start|>assistant", decoded)
+
     def test_dispersion_grouped_metrics_use_count_and_sum(self):
         metrics = {
             "terminal_reward": 1.0,
@@ -75,7 +92,7 @@ class VerlTokenizationTests(unittest.TestCase):
                 max_response_length=2048,
                 is_valid=False,
             ),
-            -0.1,
+            0.0,
         )
         self.assertEqual(
             _causal_micro_lab_length_cap_penalty(
