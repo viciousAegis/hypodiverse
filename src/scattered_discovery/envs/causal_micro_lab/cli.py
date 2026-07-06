@@ -93,7 +93,7 @@ def _add_agent_override_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--length-penalty-max", type=float)
     parser.add_argument(
         "--mask-truncated",
-        choices=("0", "1"),
+        choices=(0, 1),
         type=int,
         help="Whether cap-hit responses should have response_mask zeroed.",
     )
