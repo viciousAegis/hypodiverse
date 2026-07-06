@@ -27,11 +27,15 @@ fi
 if [[ "${CML_GENERATE_DATASET_IF_MISSING:-0}" == "1" ]]; then
   missing_cml_file=0
   for cml_file in "${TRAIN_FILE:-}" "${VAL_FILE:-}"; do
-    if [[ -n "$cml_file" && "$cml_file" == data/causal_micro_lab/* && ! -f "$cml_file" ]]; then
-      missing_cml_file=1
-    fi
+    case "$cml_file" in
+      data/causal_micro_lab/*|*/data/causal_micro_lab/*)
+        if [[ ! -f "$cml_file" ]]; then
+          missing_cml_file=1
+        fi
+        ;;
+    esac
   done
-  if [[ "$missing_cml_file" == "1" ]]; then
+  if [[ "$missing_cml_file" == "1" || "${CML_REBUILD_DATASET:-0}" == "1" ]]; then
     scripts/cluster/prepare_causal_micro_lab_dataset.sh
   fi
 fi
