@@ -20,7 +20,7 @@ run_name: causal_micro_lab_test_k4
 rollouts_per_spec: 4
 eval_workers: 96
 eval_num_shards: 4
-max_response_length: 4096
+max_response_length: 2048
 temperature: 0.7
 top_p: 0.95
 request_timeout_s: 1800

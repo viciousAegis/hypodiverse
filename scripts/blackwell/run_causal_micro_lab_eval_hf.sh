@@ -34,7 +34,7 @@ fi
 source scripts/cluster/resolve_model_path.sh
 
 RUN_NAME="${RUN_NAME:-causal_micro_lab_eval_hf_$(date +%Y%m%d_%H%M)}"
-MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-4096}"
+MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-2048}"
 ROLLOUTS_PER_SPEC="${ROLLOUTS_PER_SPEC:-16}"
 PREFIX_KS="${PREFIX_KS:-4,8,16}"
 EVAL_WORKERS="${EVAL_WORKERS:-1}"

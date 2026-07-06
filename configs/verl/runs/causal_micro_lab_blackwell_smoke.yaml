@@ -36,5 +36,5 @@ total_epochs: 1
 save_freq: 1
 test_freq: 1
 max_prompt_length: 2048
-max_response_length: 4096
+max_response_length: 2048
 experiment_name_prefix: causal_micro_lab_blackwell_smoke_qwen3_4b_r2
