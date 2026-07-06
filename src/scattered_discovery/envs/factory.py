@@ -19,7 +19,7 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
         spec = EnvSpec(**spec)
     task = dict(spec.task)
     dense_cml_reward = os.environ.get("CAUSAL_MICRO_LAB_DENSE_REWARD", "0") == "1"
-    nonempty_output_reward = float(task.pop("nonempty_output_reward", 0.2))
+    nonempty_output_reward = float(task.pop("nonempty_output_reward", 0.2 if dense_cml_reward else 0.0))
     rule_marker_reward = float(
         task.pop("rule_marker_reward", 0.05 if dense_cml_reward else 0.0)
     )
@@ -27,7 +27,7 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
         task.pop("parse_valid_reward", 0.1 if dense_cml_reward else 0.0)
     )
     syntax_valid_reward = float(
-        task.pop("syntax_valid_reward", 0.2 if dense_cml_reward else 0.0)
+        task.pop("syntax_valid_reward", 0.2)
     )
     evidence_consistent_reward = float(
         task.pop("evidence_consistent_reward", 0.4 if dense_cml_reward else 0.0)

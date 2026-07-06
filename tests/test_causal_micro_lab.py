@@ -182,10 +182,10 @@ class CausalMicroLabTests(unittest.TestCase):
             }
         )
         invalid_nonempty = env.step("not a hypothesis")
-        self.assertEqual(invalid_nonempty.score.reward, 0.2)
+        self.assertEqual(invalid_nonempty.score.reward, 0.0)
         self.assertEqual(
             invalid_nonempty.score.breakdown.as_dict()["nonempty_output"],
-            0.2,
+            0.0,
         )
         self.assertEqual(invalid_nonempty.metrics["nonempty_output"], 1.0)
 
@@ -230,13 +230,17 @@ class CausalMicroLabTests(unittest.TestCase):
             invalid_mode.canonical.render_flat_rules()
         )
         self.assertEqual(default_invalid.score.reward, 0.2)
-        self.assertEqual(default_invalid.score.breakdown.as_dict()["format"], 0.0)
+        default_breakdown = default_invalid.score.breakdown.as_dict()
+        self.assertEqual(default_breakdown["nonempty_output"], 0.0)
+        self.assertEqual(default_breakdown["format"], 0.0)
+        self.assertEqual(default_breakdown["commit_format"], 0.2)
 
         dense_env = make_env(
             {
                 "env_type": "causal_micro_lab",
                 "task": {
                     "state": state_rows([self.state])[0],
+                    "nonempty_output_reward": 0.2,
                     "rule_marker_reward": 0.05,
                     "parse_valid_reward": 0.1,
                     "syntax_valid_reward": 0.2,
