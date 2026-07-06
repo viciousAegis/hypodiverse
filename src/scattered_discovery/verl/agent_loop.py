@@ -61,6 +61,20 @@ def _truncate_response_budget(
     return response_ids[:max_response_length], response_mask[:max_response_length]
 
 
+def _causal_micro_lab_length_cap_penalty(
+    *,
+    response_length: int,
+    max_response_length: int,
+    is_valid: bool,
+    penalty: float = -0.1,
+) -> float:
+    if is_valid:
+        return 0.0
+    if max_response_length <= 0:
+        return 0.0
+    return penalty if response_length >= max_response_length else 0.0
+
+
 def _dispersion_label(value: float) -> str:
     text = f"{value:.2f}".rstrip("0").rstrip(".")
     return text.replace(".", "p")
@@ -270,6 +284,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
         )
         elapsed = time.monotonic() - started
         response_ids = list(output.token_ids)
+        raw_response_length = len(response_ids)
         response_mask = [1] * len(response_ids)
         raw_assistant_text = self.tokenizer.decode(
             response_ids,
@@ -278,6 +293,12 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
         assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
         step = env.step(assistant_text)
         score = step.score if step.score is not None else env.force_finalize()
+        length_cap_penalty = _causal_micro_lab_length_cap_penalty(
+            response_length=raw_response_length,
+            max_response_length=max_response_length,
+            is_valid=bool(score.valid_committed_count),
+        )
+        reward_score = score.reward + length_cap_penalty
 
         response_ids, response_mask = _truncate_response_budget(
             response_ids,
@@ -290,7 +311,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
 
         diagnostics = env.diagnostics()
         metrics = {
-            "terminal_reward": score.reward,
+            "terminal_reward": reward_score,
             "num_turns": 1.0,
             "parse_failures": float(score.parse_failures),
             "invalid_actions": float(score.invalid_actions),
@@ -311,6 +332,12 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 score.metrics.get("evidence_consistent", 0.0)
             ),
             "valid_mode_count": float(score.metrics.get("valid_mode_count", 0.0)),
+            "response_length_cap_hit": float(
+                raw_response_length >= max_response_length
+                if max_response_length > 0
+                else False
+            ),
+            "reward_length_cap": float(length_cap_penalty),
         }
         for key, value in score.breakdown.as_dict().items():
             metrics[f"reward_{key}"] = float(value)
@@ -329,7 +356,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
             prompt_ids=prompt_ids,
             response_ids=response_ids,
             response_mask=response_mask,
-            reward_score=score.reward,
+            reward_score=reward_score,
             num_turns=1,
             metrics=AgentLoopMetrics(
                 generate_sequences=elapsed,
@@ -341,7 +368,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 "min_global_steps": 0,
                 "max_global_steps": 0,
                 "reward_extra_info": metrics,
-                "score": score.as_dict(),
+                "score": {**score.as_dict(), "reward": reward_score},
                 "diagnostics": diagnostics,
                 "transcript": transcript,
             },

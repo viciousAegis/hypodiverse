@@ -4,6 +4,7 @@ from scattered_discovery.verl.agent_loop import (
     CausalMicroLabAgentLoop,
     DiscoveryAgentLoop,
     _add_dispersion_grouped_metrics,
+    _causal_micro_lab_length_cap_penalty,
 )
 from scattered_discovery.verl.qwen3_tokenization import fixed_base_message_token_ids
 
@@ -66,6 +67,32 @@ class VerlTokenizationTests(unittest.TestCase):
         self.assertEqual(metrics["dispersion/0p25/recovery_sum"], 0.25)
         self.assertEqual(metrics["dispersion/0/count"], 0.0)
         self.assertEqual(metrics["dispersion/0/terminal_reward_sum"], 0.0)
+
+    def test_causal_micro_lab_length_cap_penalty_only_hits_invalid_capped_outputs(self):
+        self.assertEqual(
+            _causal_micro_lab_length_cap_penalty(
+                response_length=2048,
+                max_response_length=2048,
+                is_valid=False,
+            ),
+            -0.1,
+        )
+        self.assertEqual(
+            _causal_micro_lab_length_cap_penalty(
+                response_length=2047,
+                max_response_length=2048,
+                is_valid=False,
+            ),
+            0.0,
+        )
+        self.assertEqual(
+            _causal_micro_lab_length_cap_penalty(
+                response_length=2048,
+                max_response_length=2048,
+                is_valid=True,
+            ),
+            0.0,
+        )
 
 
 if __name__ == "__main__":
