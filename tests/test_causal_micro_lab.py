@@ -358,6 +358,29 @@ class CausalMicroLabTests(unittest.TestCase):
             self.assertIn("private", state_rows_from_disk[0])
             self.assertTrue(outputs["manifest"].exists())
 
+    def test_split_dataset_builder_caps_val_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            outputs = build_split_dataset(
+                output_dir=tmpdir,
+                target_counts=(2, 4),
+                states_per_count={"train": 1, "val": 2, "test": 1},
+                max_rows_per_split={"val": 3},
+                seed=11,
+                beam_width=32,
+                targets_per_state=1,
+                mode_table=self.table,
+            )
+            val_rows = [
+                json.loads(line)
+                for line in outputs["verl_val"].read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            self.assertEqual(len(val_rows), 3)
+            manifest = json.loads(
+                outputs["manifest"].read_text(encoding="utf-8").splitlines()[-1]
+            )
+            self.assertEqual(manifest["max_rows_per_split"]["val"], 3)
+
     def test_build_eval_rows_from_frozen_states_cli(self):
         from scattered_discovery.envs.causal_micro_lab.cli import (
             build_eval_rows_from_states_main,

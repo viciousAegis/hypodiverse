@@ -302,6 +302,9 @@ def build_split_dataset_main() -> None:
     parser.add_argument("--train-states-per-count", type=int)
     parser.add_argument("--val-states-per-count", type=int)
     parser.add_argument("--test-states-per-count", type=int)
+    parser.add_argument("--train-max-rows", type=int)
+    parser.add_argument("--val-max-rows", type=int)
+    parser.add_argument("--test-max-rows", type=int)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--max-evidence", type=int, default=8)
     parser.add_argument("--beam-width", type=int)
@@ -344,6 +347,15 @@ def build_split_dataset_main() -> None:
         if args.test_states_per_count is not None
         else preset["test_states_per_count"],
     }
+    row_caps = {
+        split: value
+        for split, value in {
+            "train": args.train_max_rows,
+            "val": args.val_max_rows,
+            "test": args.test_max_rows,
+        }.items()
+        if value is not None
+    }
     target_counts = (
         tuple(int(item) for item in args.target_counts.split(",") if item)
         if args.target_counts
@@ -364,6 +376,7 @@ def build_split_dataset_main() -> None:
         output_dir=output_dir,
         target_counts=target_counts,
         states_per_count=counts,
+        max_rows_per_split=row_caps,
         seed=args.seed,
         max_evidence=args.max_evidence,
         beam_width=args.beam_width or preset["beam_width"],

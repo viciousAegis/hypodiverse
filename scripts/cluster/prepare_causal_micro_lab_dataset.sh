@@ -22,6 +22,26 @@ target_counts="${CML_TARGET_COUNTS:-4,8,16}"
 progress_every="${CML_PROGRESS_EVERY:-128}"
 rebuild_dataset="${CML_REBUILD_DATASET:-0}"
 
+dataset_args=()
+if [[ -n "${CML_TRAIN_STATES_PER_COUNT:-}" ]]; then
+  dataset_args+=(--train-states-per-count "$CML_TRAIN_STATES_PER_COUNT")
+fi
+if [[ -n "${CML_VAL_STATES_PER_COUNT:-}" ]]; then
+  dataset_args+=(--val-states-per-count "$CML_VAL_STATES_PER_COUNT")
+fi
+if [[ -n "${CML_TEST_STATES_PER_COUNT:-}" ]]; then
+  dataset_args+=(--test-states-per-count "$CML_TEST_STATES_PER_COUNT")
+fi
+if [[ -n "${CML_TRAIN_MAX_ROWS:-}" ]]; then
+  dataset_args+=(--train-max-rows "$CML_TRAIN_MAX_ROWS")
+fi
+if [[ -n "${CML_VAL_MAX_ROWS:-}" ]]; then
+  dataset_args+=(--val-max-rows "$CML_VAL_MAX_ROWS")
+fi
+if [[ -n "${CML_TEST_MAX_ROWS:-}" ]]; then
+  dataset_args+=(--test-max-rows "$CML_TEST_MAX_ROWS")
+fi
+
 reward_args=()
 if [[ -n "${CML_NONEMPTY_OUTPUT_REWARD:-}" ]]; then
   reward_args+=(--nonempty-output-reward "$CML_NONEMPTY_OUTPUT_REWARD")
@@ -62,7 +82,7 @@ build_dataset() {
   fi
 
   local needs_rebuild="$rebuild_dataset"
-  if [[ "$needs_rebuild" != "1" && "${#reward_args[@]}" -gt 0 ]]; then
+  if [[ "$needs_rebuild" != "1" && ( "${#reward_args[@]}" -gt 0 || "${#dataset_args[@]}" -gt 0 ) ]]; then
     if [[ ! -f "$output_dir/manifest.jsonl" ]]; then
       needs_rebuild=1
     elif ! "$PYTHON_BIN" -c '
@@ -79,6 +99,28 @@ def maybe_bool(name):
     raw = os.environ.get(name)
     return None if raw in (None, "") else raw == "1"
 
+def maybe_int(name):
+    raw = os.environ.get(name)
+    return None if raw in (None, "") else int(raw)
+
+expected_counts = {
+    key: value
+    for key, value in {
+        "train": maybe_int("CML_TRAIN_STATES_PER_COUNT"),
+        "val": maybe_int("CML_VAL_STATES_PER_COUNT"),
+        "test": maybe_int("CML_TEST_STATES_PER_COUNT"),
+    }.items()
+    if value is not None
+}
+expected_caps = {
+    key: value
+    for key, value in {
+        "train": maybe_int("CML_TRAIN_MAX_ROWS"),
+        "val": maybe_int("CML_VAL_MAX_ROWS"),
+        "test": maybe_int("CML_TEST_MAX_ROWS"),
+    }.items()
+    if value is not None
+}
 expected_task = {
     key: value
     for key, value in {
@@ -104,8 +146,12 @@ expected_agent = {
 manifest = Path(sys.argv[1])
 rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
 latest = rows[-1] if rows else {}
+actual_counts = latest.get("states_per_count", {})
+actual_caps = latest.get("max_rows_per_split", {})
 ok = (
-    latest.get("verl_task_overrides", {}) == expected_task
+    all(actual_counts.get(key) == value for key, value in expected_counts.items())
+    and all(actual_caps.get(key) == value for key, value in expected_caps.items())
+    and latest.get("verl_task_overrides", {}) == expected_task
     and latest.get("verl_agent_overrides", {}) == expected_agent
 )
 raise SystemExit(0 if ok else 1)
@@ -134,7 +180,7 @@ sys.argv = [
     *sys.argv[6:],
 ]
 build_split_dataset_main()
-' "$preset" "$output_dir" "$seed" "$progress_every" "$target_counts" "${reward_args[@]}"
+' "$preset" "$output_dir" "$seed" "$progress_every" "$target_counts" "${dataset_args[@]}" "${reward_args[@]}"
 }
 
 build_dataset "train/pilot" "$dataset_preset" "$dataset_output_dir" "$dataset_seed"

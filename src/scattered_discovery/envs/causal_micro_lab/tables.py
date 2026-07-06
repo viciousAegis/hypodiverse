@@ -340,11 +340,43 @@ def oracle_group_eval(
     return group_metrics(results, state)
 
 
+def _balanced_state_cap(
+    states: list[EvidenceState],
+    *,
+    max_rows: int,
+    seed: int,
+) -> list[EvidenceState]:
+    if max_rows <= 0:
+        return []
+    grouped: dict[int, list[EvidenceState]] = {}
+    for state in states:
+        grouped.setdefault(state.valid_mode_count, []).append(state)
+    rng = Random(seed)
+    for group in grouped.values():
+        rng.shuffle(group)
+
+    selected: list[EvidenceState] = []
+    buckets = sorted(grouped)
+    while len(selected) < max_rows and buckets:
+        next_buckets = []
+        for bucket in buckets:
+            group = grouped[bucket]
+            if group:
+                selected.append(group.pop())
+                if len(selected) == max_rows:
+                    break
+            if group:
+                next_buckets.append(bucket)
+        buckets = next_buckets
+    return selected
+
+
 def build_split_dataset(
     *,
     output_dir: str | Path,
     target_counts: tuple[int, ...] = (4, 8, 16),
     states_per_count: dict[str, int] | None = None,
+    max_rows_per_split: dict[str, int] | None = None,
     seed: int = 1,
     max_evidence: int = 8,
     beam_width: int = 256,
@@ -363,6 +395,7 @@ def build_split_dataset(
     split_ids = split_mode_ids(seed=seed, mode_table=table)
     source_for_split = source_splits or {split: split for split in SPLIT_NAMES}
     counts = states_per_count or {"train": 128, "val": 32, "test": 32}
+    row_caps = max_rows_per_split or {}
     root = Path(output_dir)
     outputs: dict[str, Path] = {}
     seen_state_ids: set[str] = set()
@@ -402,6 +435,13 @@ def build_split_dataset(
             exclude_state_ids=seen_state_ids,
             mode_table=table,
         )
+        max_rows = row_caps.get(split)
+        if max_rows is not None and max_rows >= 0 and len(states) > max_rows:
+            states = _balanced_state_cap(
+                states,
+                max_rows=max_rows,
+                seed=seed + 1000 + SPLIT_NAMES.index(split),
+            )
         seen_state_ids.update(state.state_id for state in states)
         if progress:
             progress(f"[{split}] writing {len(states)} states")
@@ -443,6 +483,7 @@ def build_split_dataset(
     manifest = {
         "target_counts": list(target_counts),
         "states_per_count": counts,
+        "max_rows_per_split": row_caps,
         "seed": seed,
         "max_evidence": max_evidence,
         "beam_width": beam_width,
