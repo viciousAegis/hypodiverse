@@ -16,6 +16,16 @@ from scattered_discovery.rewards import reward_config_from_task
 
 def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
     if isinstance(spec, dict):
+        env_spec_keys = {
+            "env_type",
+            "task",
+            "protocol",
+            "max_steps",
+            "max_commit",
+            "max_consecutive_invalid",
+            "seed",
+        }
+        spec = {key: value for key, value in spec.items() if key in env_spec_keys}
         spec = EnvSpec(**spec)
     task = dict(spec.task)
     dense_cml_reward = os.environ.get("CAUSAL_MICRO_LAB_DENSE_REWARD", "0") == "1"

@@ -318,6 +318,8 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertEqual(parsed["agent"]["length_penalty_start"], 3072)
         self.assertEqual(parsed["agent"]["length_penalty_max"], -0.2)
         self.assertFalse(parsed["agent"]["mask_truncated"])
+        env_from_row = make_env(parsed)
+        self.assertIsNotNone(env_from_row.reset())
         metrics = oracle_group_eval(self.state, samples=4, mode_table=self.table)
         self.assertEqual(metrics["budget_normalized_coverage"], 1.0)
         with tempfile.TemporaryDirectory() as tmpdir:
