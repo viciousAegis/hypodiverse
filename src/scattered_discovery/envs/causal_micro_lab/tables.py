@@ -274,6 +274,11 @@ def verl_rows_for_states(
                     sort_keys=True,
                 ),
                 "state_json": json.dumps(state_record, sort_keys=True),
+                "extra_info": {
+                    "index": index,
+                    "min_global_steps": 0,
+                    "max_global_steps": 0,
+                },
                 "reward_model": {"style": "rule"},
             }
         )

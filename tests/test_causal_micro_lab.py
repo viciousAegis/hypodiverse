@@ -324,6 +324,8 @@ class CausalMicroLabTests(unittest.TestCase):
             spec = json.loads(rows[0]["env_spec_json"])
             self.assertEqual(spec["env_type"], "causal_micro_lab")
             self.assertEqual(spec["task"]["state"]["state_id"], self.state.state_id)
+            self.assertEqual(rows[0]["extra_info"]["min_global_steps"], 0)
+            self.assertEqual(rows[0]["extra_info"]["max_global_steps"], 0)
 
     def test_causal_micro_lab_eval_summary(self):
         records = [
