@@ -5,8 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/env.sh"
 
-export CML_DATASET_PRESET="${CML_DATASET_PRESET:-trainable}"
-export CML_DATASET_OUTPUT_DIR="${CML_DATASET_OUTPUT_DIR:-$DATA_ROOT/causal_micro_lab/trainable}"
+export CML_DATASET_PRESET="${CML_DATASET_PRESET:-pilot}"
+export CML_DATASET_OUTPUT_DIR="${CML_DATASET_OUTPUT_DIR:-$DATA_ROOT/causal_micro_lab/pilot}"
 export TRAIN_FILE="${TRAIN_FILE:-$CML_DATASET_OUTPUT_DIR/verl_train.jsonl}"
 export VAL_FILE="${VAL_FILE:-$CML_DATASET_OUTPUT_DIR/verl_val.jsonl}"
 
@@ -20,8 +20,8 @@ export MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-256}"
 export CAUSAL_MICRO_LAB_DISABLE_THINKING="${CAUSAL_MICRO_LAB_DISABLE_THINKING:-1}"
 export CAUSAL_MICRO_LAB_DENSE_REWARD="${CAUSAL_MICRO_LAB_DENSE_REWARD:-1}"
 
-export SAVE_FREQ="${SAVE_FREQ:-50}"
-export TEST_FREQ="${TEST_FREQ:-50}"
+export SAVE_FREQ="${SAVE_FREQ:-12}"
+export TEST_FREQ="${TEST_FREQ:-12}"
 export TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 export EXPERIMENT_NAME_PREFIX="${EXPERIMENT_NAME_PREFIX:-causal_micro_lab_blackwell_nothink_warmup_qwen3_4b_r4}"
 export EXPERIMENT_NAME="${EXPERIMENT_NAME:-${EXPERIMENT_NAME_PREFIX}_$(date +%Y%m%d_%H%M)}"
