@@ -74,6 +74,26 @@ LoRA runs save both the adapter at `final/` and a merged serving model at
 MODEL_PATH=/homes/$CSRID/open-discovery/checkpoints/causal_micro_lab_sft/causal_micro_lab_sft_qwen3_4b_lora/merged DOWNLOAD_MODEL=0 THINK=true bash scripts/blackwell/run_causal_micro_lab_eval.sh
 ```
 
+Convert a veRL FSDP actor checkpoint to a Hugging Face model for eval:
+
+```bash
+bash scripts/blackwell/convert_verl_actor_to_hf.sh \
+  --run causal_micro_lab_blackwell_validity_format02_r8_from_warmup_gs4_think_20260706_1547 \
+  --step 100
+```
+
+The output defaults to:
+
+```text
+$BLACKWELL_RUN_ROOT/models/${RUN}_global_step_${STEP}_hf
+```
+
+Use the converted model with SGLang eval:
+
+```bash
+MODEL_PATH=/scratch/$USER/open-discovery/models/${RUN}_global_step_${STEP}_hf DOWNLOAD_MODEL=0 THINK=true bash scripts/blackwell/run_causal_micro_lab_eval.sh
+```
+
 The default eval config is `configs/verl/eval/causal_micro_lab_test_k16.yaml`.
 It emits prefix summaries for `k=4`, `k=8`, and `k=16` from the same generated
 samples.
