@@ -4,16 +4,21 @@ import inspect
 
 
 def main() -> None:
+    import torch
     import transfer_queue  # noqa: F401
     from verl.experimental.agent_loop.agent_loop import AgentLoopOutput
     from verl.trainer import main_ppo
     from verl.trainer.ppo.v1.trainer_base import PPOTrainer
     from verl.workers.utils.padding import response_to_nested  # noqa: F401
 
+    from scattered_discovery.envs.causal_micro_lab.consequence_diversity import (
+        BehaviorArchive,
+    )
     from scattered_discovery.verl.agent_loop import CDGRPOAgentLoop
     from scattered_discovery.verl.cd_grpo_trainer import (
         CDGRPOTrainerMixin,
         build_cd_task_runner,
+        compute_cd_grpo_advantages,
     )
 
     failures = []
@@ -33,20 +38,56 @@ def main() -> None:
     source = inspect.getsource(PPOTrainer._compute_advantage)
     for required in ("rm_scores", "response_mask", "kv_batch_get"):
         if required not in source:
-            failures.append(
-                f"veRL v1 advantage hook no longer references {required!r}"
-            )
+            failures.append(f"veRL v1 advantage hook no longer references {required!r}")
     if CDGRPOAgentLoop is None or CDGRPOTrainerMixin is None:
         failures.append("project CD-GRPO modules did not import")
     if failures:
         raise SystemExit(
-            "CD-GRPO/veRL compatibility check failed:\n- "
-            + "\n- ".join(failures)
+            "CD-GRPO/veRL compatibility check failed:\n- " + "\n- ".join(failures)
         )
 
     runner = build_cd_task_runner()
     if runner is None:
         raise SystemExit("could not construct CD-GRPO TaskRunner")
+
+    payloads = [
+        {
+            "state_id": "preflight-state",
+            "status": "valid",
+            "consequence_signature": signature,
+            "behavior_key": key,
+        }
+        for signature, key in (("0000", "a"), ("0000", "a"), ("1111", "b"))
+    ]
+    advantages, _, metrics = compute_cd_grpo_advantages(
+        token_level_rewards=torch.ones((3, 1)),
+        response_mask=torch.ones((3, 1)),
+        index=["preflight-group"] * 3,
+        payloads=payloads,
+        eval_payloads=None,
+        config={"beta": 0.3, "archive": True},
+        archive=BehaviorArchive(),
+    )
+    required_metrics = {
+        "cd_grpo/groups_with_2plus_unique_valid_rate",
+        "cd_grpo/diversity_signal_active_rate",
+        "cd_grpo/pairwise_consequence_distance_mean",
+        "cd_grpo/diversity_contribution_abs_mean",
+        "cd_grpo/archive_new_unique_behavior_rate",
+        "cd_grpo/all_truncated_group_rate",
+    }
+    missing_metrics = required_metrics - metrics.keys()
+    if missing_metrics:
+        raise SystemExit(
+            "CD-GRPO metric preflight is missing: " + ", ".join(sorted(missing_metrics))
+        )
+    if advantages.shape != (3, 1):
+        raise SystemExit(
+            f"CD-GRPO advantage preflight returned shape {advantages.shape}"
+        )
+    if metrics["cd_grpo/diversity_signal_active_rate"] != 1.0:
+        raise SystemExit("CD-GRPO diversity signal did not activate in preflight")
+
     print("CD-GRPO veRL compatibility check passed.")
 
 

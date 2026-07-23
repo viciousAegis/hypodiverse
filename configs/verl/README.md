@@ -216,8 +216,13 @@ the checkpointed archive. A successful preflight prints:
 CD-GRPO veRL compatibility check passed.
 ```
 
-Method diagnostics are logged under `cd_grpo/*` in W&B. Each veRL checkpoint
-also contains `cd_grpo_archive.json`; normal `trainer.resume_mode=auto`
+Method diagnostics are logged under `cd_grpo/*` in W&B. In particular,
+`groups_with_2plus_unique_valid_rate` and `diversity_signal_active_rate` show
+whether sampled groups contain distinct valid alternatives and whether the
+diversity term contributes a nonzero signal. Pairwise consequence distance,
+validity/diversity advantage magnitudes, archive novelty, and all-truncated
+group rates are logged alongside coverage and effective mode count. Each veRL
+checkpoint also contains `cd_grpo_archive.json`; normal `trainer.resume_mode=auto`
 restores the actor and archive together.
 
 After the smoke succeeds, submit the 384-update trainable run:
@@ -236,16 +241,8 @@ shared rows. CD-GRPO computes its sparse validity reward in its own loop, so
 the validity run's embedded syntax-shaping setting does not enter the method
 reward.
 
-For a matched initialization, the full run requires the validity run's warmup
-model at:
-
-```text
-.cache/models/causal_micro_lab_nothink_warmup_gs4_hf
-```
-
-The Slurm job exits before allocating the training run if that model is absent;
-it never silently substitutes raw Qwen3-4B. The smoke intentionally uses raw
-Qwen3-4B because it tests integration rather than model quality.
+The full run starts directly from `Qwen/Qwen3-4B`; it does not require the
+discarded no-thinking warmup checkpoint.
 
 The full config uses a stable experiment name, so resubmitting that command
 after the 12-hour wall-time limit resumes from its latest checkpoint. Change

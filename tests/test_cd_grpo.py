@@ -13,9 +13,13 @@ from scattered_discovery.envs.causal_micro_lab.consequence_diversity import (
 )
 from scattered_discovery.envs.causal_micro_lab.consequence_reward import (
     CandidateStatus,
+    base_candidate_reward,
     deterministic_probe_ids,
     evaluate_consequences,
     parse_visible_evidence,
+)
+from scattered_discovery.verl.cd_grpo_trainer import (
+    compute_cd_grpo_advantages,
 )
 from scattered_discovery.envs.causal_micro_lab.interventions import (
     enumerate_experiments,
@@ -78,6 +82,11 @@ class ConsequenceRewardTests(unittest.TestCase):
         self.assertEqual(malformed.status, CandidateStatus.PARSE_FAIL)
         self.assertEqual(truncated.status, CandidateStatus.TRUNCATED)
         self.assertIsNone(truncated.behavior_key)
+
+        self.assertEqual(base_candidate_reward(valid), (1.0, 0.0, 1.0))
+        self.assertEqual(base_candidate_reward(invalid), (0.2, 0.2, 0.0))
+        self.assertEqual(base_candidate_reward(malformed), (0.0, 0.0, 0.0))
+        self.assertEqual(base_candidate_reward(truncated), (0.0, 0.0, 0.0))
 
     def test_probe_subset_is_state_deterministic(self):
         evidence = parse_visible_evidence(visible_state_record())
@@ -185,6 +194,119 @@ class CDGRPOConfigTests(unittest.TestCase):
         archive = BehaviorArchive(counts={("s", "b"): 2.0})
         encoded = json.dumps(archive.to_dict(), sort_keys=True)
         self.assertIn('"counts": [["s", "b", 2.0]]', encoded)
+
+
+class CDGRPOLoggingTests(unittest.TestCase):
+    def test_activation_advantage_archive_and_truncation_metrics(self):
+        import torch
+
+        statuses = [
+            CandidateStatus.VALID,
+            CandidateStatus.VALID,
+            CandidateStatus.VALID,
+            CandidateStatus.INVALID,
+            CandidateStatus.INVALID,
+            CandidateStatus.TRUNCATED,
+            CandidateStatus.TRUNCATED,
+            CandidateStatus.VALID,
+            CandidateStatus.INVALID,
+        ]
+        signatures = [
+            "0000",
+            "0000",
+            "1111",
+            None,
+            None,
+            None,
+            None,
+            "0011",
+            None,
+        ]
+        behavior_keys = ["a", "a", "b", None, None, None, None, "c", None]
+        state_ids = (
+            ["state-0"] * 3 + ["state-1"] * 2 + ["state-2"] * 2 + ["state-3"] * 2
+        )
+        payloads = [
+            {
+                "state_id": state_id,
+                "status": status.value,
+                "consequence_signature": signature,
+                "behavior_key": behavior_key,
+            }
+            for state_id, status, signature, behavior_key in zip(
+                state_ids, statuses, signatures, behavior_keys, strict=True
+            )
+        ]
+        token_rewards = torch.tensor(
+            [
+                [1.0],
+                [1.0],
+                [1.0],
+                [0.2],
+                [0.2],
+                [-0.2],
+                [-0.2],
+                [1.0],
+                [0.2],
+            ]
+        )
+        mask = torch.ones_like(token_rewards)
+        archive = BehaviorArchive()
+
+        advantages, _, metrics = compute_cd_grpo_advantages(
+            token_level_rewards=token_rewards,
+            response_mask=mask,
+            index=["g0", "g0", "g0", "g1", "g1", "g2", "g2", "g3", "g3"],
+            payloads=payloads,
+            eval_payloads=None,
+            config={"beta": 0.3, "archive": True},
+            archive=archive,
+        )
+
+        self.assertEqual(advantages.shape, token_rewards.shape)
+        self.assertEqual(metrics["cd_grpo/groups_with_0_valid_rate"], 0.5)
+        self.assertEqual(metrics["cd_grpo/groups_with_1_valid_rate"], 0.25)
+        self.assertEqual(metrics["cd_grpo/groups_with_2plus_valid_rate"], 0.25)
+        self.assertEqual(metrics["cd_grpo/groups_with_2plus_unique_valid_rate"], 0.25)
+        self.assertEqual(metrics["cd_grpo/diversity_signal_active_rate"], 0.25)
+        self.assertEqual(metrics["cd_grpo/all_truncated_group_rate"], 0.25)
+        self.assertEqual(
+            metrics["cd_grpo/pairwise_consequence_distance_mean"], 2.0 / 3.0
+        )
+        self.assertEqual(
+            metrics["cd_grpo/unique_pairwise_consequence_distance_mean"], 1.0
+        )
+        self.assertGreater(metrics["cd_grpo/diversity_advantage_abs_mean"], 0.0)
+        self.assertGreater(metrics["cd_grpo/diversity_contribution_abs_mean"], 0.0)
+        self.assertEqual(metrics["cd_grpo/archive_new_valid_completion_rate"], 1.0)
+        self.assertEqual(metrics["cd_grpo/archive_new_unique_behavior_rate"], 1.0)
+
+    def test_duplicate_valid_group_has_no_diversity_signal(self):
+        import torch
+
+        payloads = [
+            {
+                "state_id": "state",
+                "status": CandidateStatus.VALID.value,
+                "consequence_signature": "0101",
+                "behavior_key": "same",
+            }
+            for _ in range(2)
+        ]
+        _, _, metrics = compute_cd_grpo_advantages(
+            token_level_rewards=torch.ones((2, 1)),
+            response_mask=torch.ones((2, 1)),
+            index=["group", "group"],
+            payloads=payloads,
+            eval_payloads=None,
+            config={"beta": 0.3, "archive": False},
+            archive=BehaviorArchive(),
+        )
+
+        self.assertEqual(metrics["cd_grpo/groups_with_2plus_valid_rate"], 1.0)
+        self.assertEqual(metrics["cd_grpo/groups_with_2plus_unique_valid_rate"], 0.0)
+        self.assertEqual(metrics["cd_grpo/diversity_signal_active_rate"], 0.0)
+        self.assertEqual(metrics["cd_grpo/pairwise_consequence_distance_mean"], 0.0)
 
 
 if __name__ == "__main__":

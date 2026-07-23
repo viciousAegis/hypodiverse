@@ -14,7 +14,7 @@ causal_micro_lab_agent_name: cd_grpo_agent_loop
 causal_micro_lab_nonempty_output_reward: 0.0
 causal_micro_lab_rule_marker_reward: 0.0
 causal_micro_lab_parse_valid_reward: 0.0
-causal_micro_lab_syntax_valid_reward: 0.0
+causal_micro_lab_syntax_valid_reward: 0.2
 causal_micro_lab_evidence_consistent_reward: 0.0
 causal_micro_lab_valid_hypothesis_reward: 1.0
 causal_micro_lab_length_penalty_start: 4096
@@ -30,6 +30,7 @@ cd_grpo_beta_guard_window: 50
 cd_grpo_ell: 0.25
 cd_grpo_gamma: 0.7
 cd_grpo_probe_fraction: 1.0
+cd_grpo_length_penalty_start: 3072
 
 discovery_algo: grpo
 model_id: Qwen/Qwen3-4B

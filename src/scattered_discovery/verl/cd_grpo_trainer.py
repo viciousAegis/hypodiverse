@@ -39,6 +39,30 @@ def _normalize_group(values: list[float], active: list[int]) -> list[float]:
     return result
 
 
+def _mean(values: list[float]) -> float:
+    return sum(values) / max(1, len(values))
+
+
+def _population_std(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    mean = _mean(values)
+    return math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
+
+
+def _pairwise_distances(signatures: list[str]) -> list[float]:
+    distances: list[float] = []
+    for left_index, left in enumerate(signatures):
+        for right in signatures[left_index + 1 :]:
+            if len(left) != len(right):
+                raise ValueError("consequence signatures must have equal length")
+            distances.append(
+                sum(a != b for a, b in zip(left, right, strict=True))
+                / max(1, len(left))
+            )
+    return distances
+
+
 def compute_cd_grpo_advantages(
     *,
     token_level_rewards: Any,
@@ -64,8 +88,7 @@ def compute_cd_grpo_advantages(
         groups[group_id].append(item_index)
 
     validity_rate = sum(
-        payload.get("status") == CandidateStatus.VALID.value
-        for payload in payloads
+        payload.get("status") == CandidateStatus.VALID.value for payload in payloads
     ) / max(1, len(payloads))
     running_validity = archive.update_validity(
         validity_rate,
@@ -81,25 +104,37 @@ def compute_cd_grpo_advantages(
 
     advantage_scalars = torch.zeros_like(scores)
     diversity_raw_all: list[float] = []
+    diversity_advantages_all: list[float] = []
+    validity_advantages_all: list[float] = []
+    pairwise_distances_all: list[float] = []
+    unique_pairwise_distances_all: list[float] = []
     diagnostics_all = []
     eval_rows: list[dict[str, Any]] = []
     valid_candidates_for_archive: list[DiversityCandidate] = []
+    groups_with_zero_valid = 0
+    groups_with_one_valid = 0
+    groups_with_two_plus_valid = 0
+    groups_with_two_plus_unique = 0
+    groups_with_nonzero_diversity = 0
+    groups_all_truncated = 0
+    archive_new_valid_completions = 0
+    archive_new_unique_behaviors = 0
+    archive_valid_completions = 0
+    archive_unique_behaviors = 0
     for group_indices in groups.values():
         group_scores = scores[group_indices]
         if len(group_indices) == 1:
             validity_advantages = torch.zeros_like(group_scores)
         else:
-            validity_advantages = (
-                group_scores - group_scores.mean()
-            ) / (group_scores.std(unbiased=True) + 1e-6)
+            validity_advantages = (group_scores - group_scores.mean()) / (
+                group_scores.std(unbiased=True) + 1e-6
+            )
 
         candidates = [
             DiversityCandidate(
                 state_id=str(payloads[item_index]["state_id"]),
                 status=CandidateStatus(str(payloads[item_index]["status"])),
-                consequence_signature=payloads[item_index].get(
-                    "consequence_signature"
-                ),
+                consequence_signature=payloads[item_index].get("consequence_signature"),
                 behavior_key=payloads[item_index].get("behavior_key"),
             )
             for item_index in group_indices
@@ -117,11 +152,65 @@ def compute_cd_grpo_advantages(
             if candidate.valid
         ]
         normalized = _normalize_group(raw_rewards, active)
-        for local_index, item_index in enumerate(group_indices):
-            advantage_scalars[item_index] = (
-                validity_advantages[local_index]
-                + effective_beta * normalized[local_index]
+        valid_count = len(active)
+        unique_valid_keys = {
+            candidates[local_index].behavior_key or "" for local_index in active
+        }
+        if valid_count == 0:
+            groups_with_zero_valid += 1
+        elif valid_count == 1:
+            groups_with_one_valid += 1
+        else:
+            groups_with_two_plus_valid += 1
+        if len(unique_valid_keys) >= 2:
+            groups_with_two_plus_unique += 1
+        if any(abs(normalized[local_index]) > 1e-8 for local_index in active):
+            groups_with_nonzero_diversity += 1
+        if candidates and all(
+            candidate.status is CandidateStatus.TRUNCATED for candidate in candidates
+        ):
+            groups_all_truncated += 1
+
+        valid_signatures = [
+            candidates[local_index].consequence_signature or ""
+            for local_index in active
+        ]
+        pairwise_distances_all.extend(_pairwise_distances(valid_signatures))
+        unique_signatures = sorted(set(valid_signatures))
+        unique_pairwise_distances_all.extend(_pairwise_distances(unique_signatures))
+
+        if archive_enabled:
+            archive_valid_completions += valid_count
+            archive_unique_behaviors += len(unique_valid_keys)
+            archive_new_valid_completions += sum(
+                archive.count(
+                    candidates[local_index].state_id,
+                    candidates[local_index].behavior_key or "",
+                )
+                == 0.0
+                for local_index in active
             )
+            archive_new_unique_behaviors += (
+                sum(
+                    archive.count(
+                        candidates[active[0]].state_id,
+                        behavior_key,
+                    )
+                    == 0.0
+                    for behavior_key in unique_valid_keys
+                )
+                if active
+                else 0
+            )
+
+        for local_index, item_index in enumerate(group_indices):
+            validity_value = float(validity_advantages[local_index].item())
+            diversity_value = float(normalized[local_index])
+            advantage_scalars[item_index] = (
+                validity_value + effective_beta * diversity_value
+            )
+            validity_advantages_all.append(validity_value)
+            diversity_advantages_all.append(diversity_value)
         diversity_raw_all.extend(raw_rewards[local_index] for local_index in active)
         valid_candidates_for_archive.extend(
             candidate for candidate in candidates if candidate.valid
@@ -130,18 +219,17 @@ def compute_cd_grpo_advantages(
         if eval_payloads:
             metadata = eval_payloads[group_indices[0]]
             valid_keys = [
-                candidate.behavior_key
-                for candidate in candidates
-                if candidate.valid
+                candidate.behavior_key for candidate in candidates if candidate.valid
             ]
             counts: dict[str, int] = defaultdict(int)
             for key in valid_keys:
                 counts[key or ""] += 1
             valid_count = len(valid_keys)
-            probabilities = [
-                count / valid_count
-                for count in counts.values()
-            ] if valid_count else []
+            probabilities = (
+                [count / valid_count for count in counts.values()]
+                if valid_count
+                else []
+            )
             entropy = -sum(
                 probability * math.log(probability)
                 for probability in probabilities
@@ -152,9 +240,7 @@ def compute_cd_grpo_advantages(
                 {
                     "coverage": len(counts) / available if available else 0.0,
                     "dominant_mode_mass": max(probabilities, default=0.0),
-                    "effective_mode_count": math.exp(entropy)
-                    if probabilities
-                    else 0.0,
+                    "effective_mode_count": math.exp(entropy) if probabilities else 0.0,
                     "M": available,
                     "separation_bucket": str(
                         metadata.get("separation_bucket", "unknown")
@@ -172,25 +258,61 @@ def compute_cd_grpo_advantages(
     duplicate_completions = sum(
         item.duplicate_valid_completions for item in diagnostics_all
     )
+    group_count = len(diagnostics_all)
+    diversity_contributions = [
+        effective_beta * value for value in diversity_advantages_all
+    ]
     metrics = {
         "cd_grpo/beta": effective_beta,
         "cd_grpo/validity_rate": validity_rate,
         "cd_grpo/running_validity_rate": running_validity,
-        "cd_grpo/unique_behaviors_per_group": unique_behaviors
-        / max(1, len(diagnostics_all)),
+        "cd_grpo/valid_completions_per_group": valid_completions / max(1, group_count),
+        "cd_grpo/unique_behaviors_per_group": unique_behaviors / max(1, group_count),
         "cd_grpo/duplicate_valid_rate": duplicate_completions
         / max(1, valid_completions),
         "cd_grpo/groups_skipped_rate": sum(item.skipped for item in diagnostics_all)
-        / max(1, len(diagnostics_all)),
-        "cd_grpo/diversity_raw_mean": sum(diversity_raw_all)
-        / max(1, len(diversity_raw_all)),
-        "cd_grpo/archive_size": float(len(archive.counts))
-        if archive_enabled
-        else 0.0,
+        / max(1, group_count),
+        "cd_grpo/groups_with_0_valid_rate": groups_with_zero_valid
+        / max(1, group_count),
+        "cd_grpo/groups_with_1_valid_rate": groups_with_one_valid / max(1, group_count),
+        "cd_grpo/groups_with_2plus_valid_rate": groups_with_two_plus_valid
+        / max(1, group_count),
+        "cd_grpo/groups_with_2plus_unique_valid_rate": groups_with_two_plus_unique
+        / max(1, group_count),
+        "cd_grpo/diversity_signal_active_rate": groups_with_nonzero_diversity
+        / max(1, group_count),
+        "cd_grpo/all_truncated_group_rate": groups_all_truncated / max(1, group_count),
+        "cd_grpo/pairwise_consequence_distance_mean": _mean(pairwise_distances_all),
+        "cd_grpo/unique_pairwise_consequence_distance_mean": _mean(
+            unique_pairwise_distances_all
+        ),
+        "cd_grpo/diversity_raw_mean": _mean(diversity_raw_all),
+        "cd_grpo/validity_advantage_abs_mean": _mean(
+            [abs(value) for value in validity_advantages_all]
+        ),
+        "cd_grpo/validity_advantage_std": _population_std(validity_advantages_all),
+        "cd_grpo/diversity_advantage_abs_mean": _mean(
+            [abs(value) for value in diversity_advantages_all]
+        ),
+        "cd_grpo/diversity_advantage_std": _population_std(diversity_advantages_all),
+        "cd_grpo/diversity_contribution_abs_mean": _mean(
+            [abs(value) for value in diversity_contributions]
+        ),
+        "cd_grpo/archive_size": float(len(archive.counts)) if archive_enabled else 0.0,
+        "cd_grpo/archive_new_valid_completion_rate": (
+            archive_new_valid_completions / max(1, archive_valid_completions)
+            if archive_enabled
+            else 0.0
+        ),
+        "cd_grpo/archive_new_unique_behavior_rate": (
+            archive_new_unique_behaviors / max(1, archive_unique_behaviors)
+            if archive_enabled
+            else 0.0
+        ),
         "cd_grpo/archive_scale_mean": sum(
             item.mean_archive_scale for item in diagnostics_all
         )
-        / max(1, len(diagnostics_all)),
+        / max(1, group_count),
     }
     if eval_rows:
         for metric_name in (
@@ -207,9 +329,7 @@ def compute_cd_grpo_advantages(
         ):
             labels = sorted({str(row[field]) for row in eval_rows})
             for label in labels:
-                selected = [
-                    row for row in eval_rows if str(row[field]) == label
-                ]
+                selected = [row for row in eval_rows if str(row[field]) == label]
                 metrics[f"cd_grpo/{prefix}_{label}/groups"] = float(len(selected))
                 metrics[f"cd_grpo/{prefix}_{label}/coverage"] = sum(
                     float(row["coverage"]) for row in selected
@@ -287,14 +407,8 @@ class CDGRPOTrainerMixin:
         )
         response_mask_nested = raw["response_mask"]
         extra_fields = raw.pop("extra_fields").tolist()
-        payloads = [
-            item["cd_reward_payload"]
-            for item in extra_fields
-        ]
-        eval_payloads = [
-            item.get("cd_eval_payload", {})
-            for item in extra_fields
-        ]
+        payloads = [item["cd_reward_payload"] for item in extra_fields]
+        eval_payloads = [item.get("cd_eval_payload", {}) for item in extra_fields]
         data = DataProto(batch=raw.to_padded_tensor())
         data.batch["token_level_scores"] = data.batch["rm_scores"]
         uid = np.array(data.batch.pop("uid").tolist(), dtype=object)

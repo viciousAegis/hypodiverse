@@ -82,6 +82,7 @@ KEY_MAP = {
     "cd_grpo_ell": "CD_GRPO_ELL",
     "cd_grpo_gamma": "CD_GRPO_GAMMA",
     "cd_grpo_probe_fraction": "CD_GRPO_PROBE_FRACTION",
+    "cd_grpo_length_penalty_start": "CD_GRPO_LENGTH_PENALTY_START",
     "max_steps": "MAX_STEPS",
     "max_consecutive_invalid": "MAX_CONSECUTIVE_INVALID",
     "experiment_name": "EXPERIMENT_NAME",

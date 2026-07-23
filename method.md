@@ -21,7 +21,9 @@ Any PR that makes the reward path depend on `private.*` or the mode table is wro
 
 For each completion in a group of `G` rollouts on evidence state `E`:
 
-1. **Extract answer**: text after the final `</think>` tag. If generation was truncated (no closing think tag, or no JSON found), mark `status=TRUNCATED`.
+1. **Extract answer**: strip any completed Qwen thinking block and retain the
+   final three rule lines. If generation reaches the response-token cap, mark
+   `status=TRUNCATED`.
 2. **Strict parse** per V0 spec §3 (reject missing/repeated targets, bad operators, bad arity, duplicate binary inputs, unavailable parents, noncanonical input order). Failure → `status=PARSE_FAIL`.
 3. **Validity**: execute the parsed hypothesis with the DSL executor on every experiment in `E` (same inputs + intervention); valid iff all predicted `(Z1, Z2, Y)` match the recorded observations. → `status=VALID` or `INVALID`.
 4. **Consequence signature** (VALID only): execute the hypothesis on the **probe set** `P` and concatenate predicted `(Z1, Z2, Y)` triples into a bit vector `s`.
@@ -33,7 +35,11 @@ For each completion in a group of `G` rollouts on evidence state `E`:
 
 ### 3.1 Validity advantage (unchanged GRPO)
 
-- Scalar reward `r_val = 1` if VALID else `0` (TRUNCATED and PARSE_FAIL are 0).
+- `r_val = 1.0` for an evidence-consistent hypothesis, `0.2` for a
+  strictly syntax-valid but evidence-inconsistent hypothesis, and `0.0`
+  otherwise, plus the shared overlength penalty. The penalty is zero through
+  3072 response tokens, then decreases linearly to `-0.2` at the 6000-token
+  cap; cap-hit responses are masked from the policy loss.
 - `A_val` = verl's standard GRPO group normalization of `r_val`.
 
 ### 3.2 Diversity advantage

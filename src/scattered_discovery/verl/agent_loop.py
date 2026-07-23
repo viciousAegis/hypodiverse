@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from scattered_discovery.backends.base import split_visible_thinking
 from scattered_discovery.envs.causal_micro_lab.consequence_reward import (
+    base_candidate_reward,
     evaluate_consequences,
 )
 from scattered_discovery.envs.factory import make_env
@@ -479,6 +480,7 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
 
         env_spec = json.loads(_as_text(kwargs["env_spec_json"]))
         state_record = json.loads(_as_text(kwargs["state_json"]))
+        task_config = env_spec.get("task") or {}
         agent_config = env_spec.get("agent") or {}
         max_response_length = int(self.rollout_config.response_length)
         request_id = _as_text(kwargs.get("uid", uuid4().hex))
@@ -516,10 +518,15 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             probe_fraction=float(cd_config.get("probe_fraction", 1.0)),
         )
         length_penalty_start = _config_int(
-            agent_config,
+            cd_config,
             "length_penalty_start",
-            "CAUSAL_MICRO_LAB_LENGTH_PENALTY_START",
-            int(max_response_length * 0.75),
+            "CD_GRPO_LENGTH_PENALTY_START",
+            _config_int(
+                agent_config,
+                "length_penalty_start",
+                "CAUSAL_MICRO_LAB_LENGTH_PENALTY_START",
+                int(max_response_length * 0.75),
+            ),
         )
         length_penalty_max = _config_float(
             agent_config,
@@ -533,8 +540,16 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             soft_start=length_penalty_start,
             max_penalty=length_penalty_max,
         )
-        validity_reward = 1.0 if consequence.valid else 0.0
-        reward_score = validity_reward + length_penalty
+        base_reward, syntax_reward, validity_reward = base_candidate_reward(
+            consequence,
+            syntax_valid_reward=float(
+                task_config.get("syntax_valid_reward", 0.2)
+            ),
+            valid_hypothesis_reward=float(
+                task_config.get("valid_hypothesis_reward", 1.0)
+            ),
+        )
+        reward_score = base_reward + length_penalty
 
         response_mask = [1] * len(response_ids)
         response_ids, response_mask = _truncate_response_budget(
@@ -570,7 +585,7 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         }
         metrics = {
             "terminal_reward": float(reward_score),
-            "base_terminal_reward": float(validity_reward),
+            "base_terminal_reward": float(base_reward),
             "validity": float(consequence.valid),
             "parse_valid": float(
                 consequence.status.value not in ("truncated", "parse_fail")
@@ -580,6 +595,8 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "response_length_cap_hit": float(cap_hit),
             "response_length_loss_masked": float(mask_truncated),
             "reward_length_cap": float(length_penalty),
+            "reward_syntax_valid": float(syntax_reward),
+            "reward_valid_hypothesis": float(validity_reward),
             "cd_probe_count": float(len(consequence.probe_experiment_ids)),
             "valid_mode_count": float(eval_payload["valid_mode_count"]),
         }

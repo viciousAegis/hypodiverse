@@ -226,6 +226,7 @@ if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
     +algorithm.cd_grpo.ell="${CD_GRPO_ELL:-0.25}"
     +algorithm.cd_grpo.gamma="${CD_GRPO_GAMMA:-0.7}"
     +algorithm.cd_grpo.probe_fraction="${CD_GRPO_PROBE_FRACTION:-1.0}"
+    +algorithm.cd_grpo.length_penalty_start="${CD_GRPO_LENGTH_PENALTY_START:-3072}"
   )
 fi
 

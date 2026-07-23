@@ -38,14 +38,12 @@ cd_grpo_beta_guard_window: 50
 cd_grpo_ell: 0.25
 cd_grpo_gamma: 0.7
 cd_grpo_probe_fraction: 1.0
+cd_grpo_length_penalty_start: 3072
 
 discovery_algo: grpo
 model_id: Qwen/Qwen3-4B
-# Match the validity-GRPO initialization. This path is deliberately explicit:
-# the full run must fail rather than silently fall back to raw Qwen3-4B.
-model_path: .cache/models/causal_micro_lab_nothink_warmup_gs4_hf
-model_basename: causal_micro_lab_nothink_warmup_gs4_hf
-download_model: 0
+model_basename: Qwen3-4B
+download_model: 1
 attn_implementation: sdpa
 use_remove_padding: "False"
 agent_loop_config_path: configs/verl/cd_grpo_agent_loop.yaml

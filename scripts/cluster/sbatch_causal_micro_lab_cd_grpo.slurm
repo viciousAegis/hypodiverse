@@ -47,13 +47,6 @@ source scripts/cluster/prepend_venv_cuda_libs.sh
 
 python scripts/cluster/check_cd_grpo_verl.py
 
-FULL_MODEL_PATH="$REPO_DIR/.cache/models/causal_micro_lab_nothink_warmup_gs4_hf"
-if [[ ! -f "$FULL_MODEL_PATH/config.json" ]]; then
-  echo "Missing matched validity-GRPO initialization: $FULL_MODEL_PATH" >&2
-  echo "Copy causal_micro_lab_nothink_warmup_gs4_hf to the cluster before submitting the full run." >&2
-  exit 1
-fi
-
 if [[ -z "${WANDB_API_KEY:-}" ]]; then
   echo "WANDB_API_KEY was not loaded from $REPO_DIR/.env" >&2
   exit 1

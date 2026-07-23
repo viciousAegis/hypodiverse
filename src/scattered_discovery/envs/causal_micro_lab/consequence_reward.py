@@ -61,6 +61,22 @@ class ConsequenceResult:
         }
 
 
+def base_candidate_reward(
+    result: ConsequenceResult,
+    *,
+    syntax_valid_reward: float = 0.2,
+    valid_hypothesis_reward: float = 1.0,
+) -> tuple[float, float, float]:
+    """Return total, syntax, and validity reward without oracle lookups."""
+    validity = valid_hypothesis_reward if result.valid else 0.0
+    syntax = (
+        syntax_valid_reward
+        if result.status is CandidateStatus.INVALID
+        else 0.0
+    )
+    return validity + syntax, syntax, validity
+
+
 def parse_visible_evidence(record: dict[str, Any]) -> VisibleEvidence:
     state_id = str(record["state_id"])
     experiments = enumerate_experiments()
