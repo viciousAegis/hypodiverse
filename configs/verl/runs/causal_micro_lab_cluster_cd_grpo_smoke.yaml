@@ -1,4 +1,4 @@
-# Two-step CD-GRPO integration smoke for one four-GPU Slurm node.
+# Two-step CD-GRPO integration smoke for one two-GPU Slurm node.
 
 prepare_datasets: 0
 causal_micro_lab_generate_dataset_if_missing: 1
@@ -43,7 +43,7 @@ default_agent_loop: cd_grpo_agent_loop
 train_file: data/causal_micro_lab/cd_grpo_cluster_smoke/verl_train.jsonl
 val_file: data/causal_micro_lab/cd_grpo_cluster_smoke/verl_val.jsonl
 
-n_gpus_per_node: 4
+n_gpus_per_node: 2
 train_batch_size: 4
 ppo_mini_batch_size: 4
 rollout_n: 16

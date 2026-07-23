@@ -1,4 +1,4 @@
-# Main CD-GRPO run for one four-GPU Slurm node.
+# Main CD-GRPO run for one two-GPU Slurm node.
 #
 # Eight prompts x 16 rollouts preserves 128 generated responses per update,
 # matching the earlier 16-prompt x 8-rollout validity run.
@@ -52,7 +52,7 @@ default_agent_loop: causal_micro_lab_agent_loop
 train_file: data/causal_micro_lab/trainable/verl_train.jsonl
 val_file: data/causal_micro_lab/trainable/verl_val.jsonl
 
-n_gpus_per_node: 4
+n_gpus_per_node: 2
 train_batch_size: 8
 ppo_mini_batch_size: 8
 rollout_n: 16

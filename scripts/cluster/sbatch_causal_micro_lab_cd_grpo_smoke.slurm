@@ -5,7 +5,7 @@
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=32
 #SBATCH --mem=256G
 #SBATCH --time=02:00:00
@@ -55,7 +55,7 @@ export WANDB_MODE="${WANDB_MODE:-online}"
 export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
 export PROJECT_NAME="${PROJECT_NAME:-$WANDB_PROJECT}"
 export NNODES="${SLURM_NNODES:-1}"
-export NGPUS_PER_NODE="${NGPUS_PER_NODE:-${SLURM_GPUS_ON_NODE:-4}}"
+export NGPUS_PER_NODE="${NGPUS_PER_NODE:-${SLURM_GPUS_ON_NODE:-2}}"
 export ROLLOUT_TP="${ROLLOUT_TP:-${TP:-1}}"
 export RUN_CONFIG="${RUN_CONFIG:-configs/verl/runs/causal_micro_lab_cluster_cd_grpo_smoke.yaml}"
 
