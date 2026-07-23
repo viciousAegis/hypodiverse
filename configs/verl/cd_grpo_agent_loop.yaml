@@ -1,0 +1,9 @@
+# CD-GRPO-specific routing.
+#
+# Frozen validity-GRPO rows name causal_micro_lab_agent_loop. Remap that label
+# for this run so the exact same dataset files can be reused without mutation.
+- name: causal_micro_lab_agent_loop
+  _target_: scattered_discovery.verl.agent_loop.CDGRPOAgentLoop
+
+- name: cd_grpo_agent_loop
+  _target_: scattered_discovery.verl.agent_loop.CDGRPOAgentLoop

@@ -61,8 +61,8 @@ PRESETS = {
 }
 
 
-def _reward_task_overrides(args: argparse.Namespace) -> dict[str, float]:
-    overrides = {}
+def _reward_task_overrides(args: argparse.Namespace) -> dict[str, float | int | str]:
+    overrides: dict[str, float | int | str] = {}
     for cli_name, task_name in (
         ("nonempty_output_reward", "nonempty_output_reward"),
         ("rule_marker_reward", "rule_marker_reward"),
@@ -74,7 +74,34 @@ def _reward_task_overrides(args: argparse.Namespace) -> dict[str, float]:
         value = getattr(args, cli_name, None)
         if value is not None:
             overrides[task_name] = float(value)
+    for cli_name, task_name in (
+        ("output_mode", "output_mode"),
+        ("multi_answer_accuracy_mode", "multi_answer_accuracy_mode"),
+    ):
+        value = getattr(args, cli_name, None)
+        if value is not None:
+            overrides[task_name] = str(value)
+    if getattr(args, "answer_count", None) is not None:
+        overrides["answer_count"] = int(args.answer_count)
+    for cli_name, task_name in (
+        ("multi_answer_format_reward", "multi_answer_format_reward"),
+        ("multi_answer_accuracy_reward", "multi_answer_accuracy_reward"),
+    ):
+        value = getattr(args, cli_name, None)
+        if value is not None:
+            overrides[task_name] = float(value)
     return overrides
+
+
+def _add_multi_answer_task_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--output-mode", choices=("single", "multi_answer_rlvr"))
+    parser.add_argument("--answer-count", type=int)
+    parser.add_argument("--multi-answer-format-reward", type=float)
+    parser.add_argument("--multi-answer-accuracy-reward", type=float)
+    parser.add_argument(
+        "--multi-answer-accuracy-mode",
+        choices=("any_valid", "unique_valid_per_k"),
+    )
 
 
 def _agent_overrides(args: argparse.Namespace) -> dict[str, float | bool]:
@@ -204,6 +231,7 @@ def build_verl_dataset_main() -> None:
     parser.add_argument("--syntax-valid-reward", type=float)
     parser.add_argument("--evidence-consistent-reward", type=float)
     parser.add_argument("--valid-hypothesis-reward", type=float)
+    _add_multi_answer_task_args(parser)
     _add_agent_override_args(parser)
     args = parser.parse_args()
     states = generate_states(
@@ -246,6 +274,7 @@ def build_eval_rows_from_states_main() -> None:
     parser.add_argument("--syntax-valid-reward", type=float)
     parser.add_argument("--evidence-consistent-reward", type=float)
     parser.add_argument("--valid-hypothesis-reward", type=float)
+    _add_multi_answer_task_args(parser)
     _add_agent_override_args(parser)
     args = parser.parse_args()
     from scattered_discovery.envs.causal_micro_lab.parser import parse_record_state
@@ -311,6 +340,7 @@ def build_split_dataset_main() -> None:
     parser.add_argument("--targets-per-state", type=int)
     parser.add_argument("--suffix", choices=["jsonl", "parquet"], default="jsonl")
     parser.add_argument("--no-verl", action="store_true")
+    parser.add_argument("--agent-name", default="causal_micro_lab_agent_loop")
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--progress-every", type=int, default=25)
     parser.add_argument(
@@ -332,6 +362,7 @@ def build_split_dataset_main() -> None:
     parser.add_argument("--syntax-valid-reward", type=float)
     parser.add_argument("--evidence-consistent-reward", type=float)
     parser.add_argument("--valid-hypothesis-reward", type=float)
+    _add_multi_answer_task_args(parser)
     _add_agent_override_args(parser)
     args = parser.parse_args()
     preset = PRESETS[args.preset]
@@ -386,6 +417,7 @@ def build_split_dataset_main() -> None:
         source_splits=source_splits or None,
         verl_task_overrides=_reward_task_overrides(args),
         verl_agent_overrides=_agent_overrides(args),
+        verl_agent_name=args.agent_name,
         include_verl=not args.no_verl,
         progress=None if args.quiet else lambda message: print(message, flush=True),
         progress_every=max(1, args.progress_every),

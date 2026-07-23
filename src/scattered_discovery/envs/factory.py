@@ -43,6 +43,11 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
         task.pop("evidence_consistent_reward", 0.4 if dense_cml_reward else 0.0)
     )
     valid_hypothesis_reward = float(task.pop("valid_hypothesis_reward", 1.0))
+    output_mode = str(task.pop("output_mode", "single"))
+    answer_count = int(task.pop("answer_count", 1))
+    multi_answer_format_reward = float(task.pop("multi_answer_format_reward", 0.5))
+    multi_answer_accuracy_reward = float(task.pop("multi_answer_accuracy_reward", 0.5))
+    multi_answer_accuracy_mode = str(task.pop("multi_answer_accuracy_mode", "any_valid"))
     reward_config = reward_config_from_task(spec.env_type, task)
     task.pop("reward", None)
     if spec.env_type == "causal_micro_lab":
@@ -56,6 +61,11 @@ def make_env(spec: EnvSpec | dict[str, Any]) -> DiscoveryEnv:
             syntax_valid_reward=syntax_valid_reward,
             evidence_consistent_reward=evidence_consistent_reward,
             valid_hypothesis_reward=valid_hypothesis_reward,
+            output_mode=output_mode,  # type: ignore[arg-type]
+            answer_count=answer_count,
+            multi_answer_format_reward=multi_answer_format_reward,
+            multi_answer_accuracy_reward=multi_answer_accuracy_reward,
+            multi_answer_accuracy_mode=multi_answer_accuracy_mode,  # type: ignore[arg-type]
         )
     if spec.env_type == "scattered_causal":
         world_raw = task.pop("world", {})

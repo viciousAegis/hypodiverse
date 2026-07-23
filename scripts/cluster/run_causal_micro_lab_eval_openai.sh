@@ -49,6 +49,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-results/causal_micro_lab_eval}"
 MAX_RESPONSE_LENGTH="${MAX_RESPONSE_LENGTH:-2048}"
 ROLLOUTS_PER_SPEC="${ROLLOUTS_PER_SPEC:-4}"
 PREFIX_KS="${PREFIX_KS:-}"
+OUTPUT_MODE="${CML_OUTPUT_MODE:-single}"
+ANSWER_COUNT="${CML_ANSWER_COUNT:-1}"
 EVAL_WORKERS="${EVAL_WORKERS:-96}"
 EVAL_SHARD_INDEX="${EVAL_SHARD_INDEX:-0}"
 EVAL_NUM_SHARDS="${EVAL_NUM_SHARDS:-1}"
@@ -132,6 +134,8 @@ ARGS=(
   --temperature "$TEMPERATURE"
   --top-p "$TOP_P"
   --request-timeout-s "$REQUEST_TIMEOUT_S"
+  --output-mode "$OUTPUT_MODE"
+  --answer-count "$ANSWER_COUNT"
 )
 
 if [[ -n "$PREFIX_KS" ]]; then

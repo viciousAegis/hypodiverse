@@ -1,0 +1,45 @@
+# Boolean Causal Micro-Lab Multi-Answer RLVR base eval, K=4.
+# One model completion emits four tagged answers; candidate-level coverage is
+# computed from those four hypotheses.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 1
+causal_micro_lab_rebuild_dataset: 0
+causal_micro_lab_dataset_preset: canonical_eval
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/canonical_eval_multi_k4
+causal_micro_lab_dataset_seed: 1
+causal_micro_lab_eval_preset: canonical_eval
+causal_micro_lab_eval_output_dir: data/causal_micro_lab/canonical_eval_multi_k4
+causal_micro_lab_eval_seed: 1
+causal_micro_lab_target_counts: 4,8,16
+causal_micro_lab_progress_every: 128
+
+causal_micro_lab_output_mode: multi_answer_rlvr
+causal_micro_lab_answer_count: 4
+causal_micro_lab_multi_answer_format_reward: 0.5
+causal_micro_lab_multi_answer_accuracy_reward: 0.5
+causal_micro_lab_multi_answer_accuracy_mode: any_valid
+
+model_id: Qwen/Qwen3-4B
+download_model: 1
+eval_file: data/causal_micro_lab/canonical_eval_multi_k4/verl_test.jsonl
+output_dir: results/causal_micro_lab_eval
+run_name: causal_micro_lab_multi_answer_k4_base_qwen3_4b
+
+rollouts_per_spec: 1
+prefix_ks: ""
+eval_workers: 96
+eval_num_shards: 1
+max_response_length: 12000
+temperature: 0.7
+top_p: 0.95
+think: true
+request_timeout_s: 2400
+transcripts: 0
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.82
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch --disable-cuda-graph"

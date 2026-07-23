@@ -12,6 +12,7 @@ from scattered_discovery.envs.causal_micro_lab.state_generator import (
     find_states,
 )
 from scattered_discovery.envs.causal_micro_lab.verifier import verify_output
+from scattered_discovery.envs.causal_micro_lab.verifier import verify_output_set
 
 
 def _default_state(seed: int = 0, target_mode_count: int = 4) -> EvidenceState:
@@ -51,6 +52,11 @@ class CausalMicroLabEnv:
         syntax_valid_reward: float = 0.0,
         evidence_consistent_reward: float = 0.0,
         valid_hypothesis_reward: float = 1.0,
+        output_mode: Literal["single", "multi_answer_rlvr"] = "single",
+        answer_count: int = 1,
+        multi_answer_format_reward: float = 0.5,
+        multi_answer_accuracy_reward: float = 0.5,
+        multi_answer_accuracy_mode: Literal["any_valid", "unique_valid_per_k"] = "any_valid",
     ) -> None:
         if isinstance(state, EvidenceState):
             self.state = state
@@ -68,6 +74,11 @@ class CausalMicroLabEnv:
         self._syntax_valid_reward = float(syntax_valid_reward)
         self._evidence_consistent_reward = float(evidence_consistent_reward)
         self._valid_hypothesis_reward = float(valid_hypothesis_reward)
+        self._output_mode = output_mode
+        self._answer_count = max(1, int(answer_count))
+        self._multi_answer_format_reward = float(multi_answer_format_reward)
+        self._multi_answer_accuracy_reward = float(multi_answer_accuracy_reward)
+        self._multi_answer_accuracy_mode = multi_answer_accuracy_mode
 
     @property
     def done(self) -> bool:
@@ -78,7 +89,11 @@ class CausalMicroLabEnv:
         return "You are solving a single-shot scientific hypothesis generation task."
 
     def reset(self) -> str:
-        return build_prompt(self.state)
+        return build_prompt(
+            self.state,
+            output_mode=self._output_mode,
+            answer_count=self._answer_count,
+        )
 
     def observation_prompt(
         self,
@@ -96,6 +111,8 @@ class CausalMicroLabEnv:
                 parse_ok=False,
                 score=self._last_score,
             )
+        if self._output_mode == "multi_answer_rlvr":
+            return self._step_multi_answer_rlvr(model_text_or_action)
         has_final_output = bool(model_text_or_action.strip())
         result = verify_output(model_text_or_action, self.state)
         if not result.parse_valid:
@@ -186,6 +203,86 @@ class CausalMicroLabEnv:
             debug={"verification": result.as_dict()},
         )
 
+    def _step_multi_answer_rlvr(self, model_text_or_action: str) -> DiscoveryStep:
+        has_final_output = bool(model_text_or_action.strip())
+        result = verify_output_set(
+            model_text_or_action,
+            self.state,
+            expected_count=self._answer_count,
+        )
+        parse_failures = self._answer_count - result.parse_valid_count
+        self._parse_failures += max(0, parse_failures)
+        self._invalid_actions += max(0, self._answer_count - result.valid_count)
+        if self._multi_answer_accuracy_mode == "unique_valid_per_k":
+            accuracy_fraction = result.coverage_per_k()
+        else:
+            accuracy_fraction = 1.0 if result.any_valid else 0.0
+        format_reward = self._multi_answer_format_reward if result.format_valid else 0.0
+        accuracy_reward = self._multi_answer_accuracy_reward * accuracy_fraction
+        breakdown = RewardBreakdown(
+            valid_hypothesis=accuracy_reward,
+            format=format_reward,
+        )
+        coverage_per_available = result.coverage_per_available(self.state)
+        valid_keys = result.unique_valid_mode_ids
+        score = DiscoveryScore(
+            reward=breakdown.total,
+            breakdown=breakdown,
+            valid_keys=valid_keys,
+            valid_committed_count=result.valid_count,
+            valid_unique_count=len(valid_keys),
+            committed_count=result.candidate_count,
+            false_count=max(0, result.candidate_count - result.valid_count),
+            duplicate_count=result.duplicate_valid_modes,
+            parse_failures=self._parse_failures,
+            invalid_actions=self._invalid_actions,
+            metrics={
+                "parse_valid": float(result.parse_valid_count == self._answer_count),
+                "syntax_valid": float(result.syntax_valid_count == self._answer_count),
+                "evidence_consistent": float(result.evidence_consistent_count > 0),
+                "nonempty_output": float(has_final_output),
+                "rule_markers": float(_has_rule_markers(model_text_or_action)),
+                "final_version_space_size": self.state.valid_mode_count,
+                "current_version_space_size": self.state.valid_mode_count,
+                "recovery": coverage_per_available,
+                "valid_mode_count": self.state.valid_mode_count,
+                "evidence_size": self.state.evidence_size,
+                "multi_answer_expected_count": self._answer_count,
+                "multi_answer_candidate_count": result.candidate_count,
+                "multi_answer_format_valid": float(result.format_valid),
+                "multi_answer_parse_valid_count": result.parse_valid_count,
+                "multi_answer_syntax_valid_count": result.syntax_valid_count,
+                "multi_answer_valid_count": result.valid_count,
+                "multi_answer_any_valid": float(result.any_valid),
+                "multi_answer_unique_valid_modes": len(valid_keys),
+                "multi_answer_duplicate_valid_modes": result.duplicate_valid_modes,
+                "multi_answer_coverage_per_k": result.coverage_per_k(),
+                "multi_answer_coverage_per_available": coverage_per_available,
+                "multi_answer_accuracy_fraction": accuracy_fraction,
+            },
+            reward_vector=tuple(
+                1.0 if mode_id in set(valid_keys) else 0.0
+                for mode_id in self.state.valid_mode_ids
+            ),
+        )
+        self._done = True
+        self._last_score = score
+        return DiscoveryStep(
+            observation=(
+                "Episode complete. "
+                f"format_valid={result.format_valid}; "
+                f"valid_modes={len(valid_keys)}; "
+                f"any_valid={result.any_valid}."
+            ),
+            done=True,
+            parse_ok=result.format_valid,
+            action_text=model_text_or_action,
+            reward=score.reward,
+            score=score,
+            metrics=score.metrics,
+            debug={"verification_set": result.as_dict()},
+        )
+
     def force_finalize(self) -> DiscoveryScore:
         breakdown = RewardBreakdown()
         score = DiscoveryScore(
@@ -216,6 +313,8 @@ class CausalMicroLabEnv:
             "evidence_size": self.state.evidence_size,
             "separation_bucket": self.state.separation_bucket,
             "family_bucket": self.state.family_bucket,
+            "output_mode": self._output_mode,
+            "answer_count": self._answer_count,
             "budget_used": 0,
             "parse_failures": self._parse_failures,
             "invalid_actions": self._invalid_actions,

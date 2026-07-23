@@ -196,3 +196,68 @@ set_summary_k16.json
 Those three files are computed from the same generated sample slots
 `sample0000` through `sample0015`, so `k=4` is the first four samples of the
 same `k=16` run rather than a separate stochastic eval.
+
+## CD-GRPO on the Slurm cluster
+
+CD-GRPO uses a dedicated agent loop and a project-owned veRL v1 TaskRunner.
+It does not patch the installed veRL checkout. Start with the two-update,
+four-GPU integration smoke:
+
+```bash
+sbatch scripts/cluster/sbatch_causal_micro_lab_cd_grpo_smoke.slurm
+```
+
+The Slurm wrapper bootstraps the project environment and runs the veRL
+compatibility check before model allocation. It generates the smoke dataset on
+first use, samples `G=16`, and uses full probes, log-det credit, `beta=0.3`, and
+the checkpointed archive. A successful preflight prints:
+
+```text
+CD-GRPO veRL compatibility check passed.
+```
+
+Method diagnostics are logged under `cd_grpo/*` in W&B. Each veRL checkpoint
+also contains `cd_grpo_archive.json`; normal `trainer.resume_mode=auto`
+restores the actor and archive together.
+
+After the smoke succeeds, submit the 384-update trainable run:
+
+```bash
+sbatch scripts/cluster/sbatch_causal_micro_lab_cd_grpo.slurm
+```
+
+The full CD-GRPO run reads the same frozen
+`data/causal_micro_lab/trainable/verl_train.jsonl` and `verl_val.jsonl` files
+as the validity-GRPO run. If those files were not transferred to the cluster,
+the shared seed and trainable preset regenerate them at those exact paths.
+The run-specific `cd_grpo_agent_loop.yaml` remaps their existing
+`causal_micro_lab_agent_loop` routing label in memory; it does not rewrite the
+shared rows. CD-GRPO computes its sparse validity reward in its own loop, so
+the validity run's embedded syntax-shaping setting does not enter the method
+reward.
+
+For a matched initialization, the full run requires the validity run's warmup
+model at:
+
+```text
+.cache/models/causal_micro_lab_nothink_warmup_gs4_hf
+```
+
+The Slurm job exits before allocating the training run if that model is absent;
+it never silently substitutes raw Qwen3-4B. The smoke intentionally uses raw
+Qwen3-4B because it tests integration rather than model quality.
+
+The full config uses a stable experiment name, so resubmitting that command
+after the 12-hour wall-time limit resumes from its latest checkpoint. Change
+the YAML experiment name before launching a separate independent run.
+
+Method arms remain YAML-selectable. Set `cd_grpo_beta: 0.0` for the matched
+GRPO arm, `cd_grpo_variant: count` for count credit,
+`cd_grpo_archive: "false"` to disable archive scaling, or change
+`cd_grpo_probe_fraction` for deterministic probe subsampling.
+
+For the scheduler-free Blackwell machine, the optional equivalent launcher is:
+
+```bash
+bash scripts/blackwell/run_causal_micro_lab_cd_grpo.sh
+```

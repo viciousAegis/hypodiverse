@@ -22,8 +22,10 @@ from scattered_discovery.envs.causal_micro_lab.prompt_builder import build_promp
 from scattered_discovery.envs.causal_micro_lab.rewards import group_metrics
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
 from scattered_discovery.envs.causal_micro_lab.verifier import (
+    SetVerificationResult,
     VerificationResult,
     verify_output,
+    verify_output_set,
 )
 
 
@@ -77,6 +79,8 @@ def _maybe_start_wandb(args: argparse.Namespace):
             "temperature": args.temperature,
             "top_p": args.top_p,
             "prefix_ks": args.prefix_ks,
+            "output_mode": args.output_mode,
+            "answer_count": args.answer_count,
         },
     )
 
@@ -192,6 +196,42 @@ def _verification_from_dict(data: dict[str, Any]) -> VerificationResult:
     )
 
 
+def _set_verification_to_eval_dict(
+    result: SetVerificationResult,
+    state: EvidenceState,
+) -> dict[str, Any]:
+    data = result.as_dict()
+    data.update(
+        {
+            "output_mode": "multi_answer_rlvr",
+            "parse_valid": result.parse_valid_count == result.expected_count,
+            "syntax_valid": result.syntax_valid_count == result.expected_count,
+            "evidence_consistent": result.evidence_consistent_count > 0,
+            "semantic_mode_id": result.unique_valid_mode_ids[0]
+            if result.unique_valid_mode_ids
+            else None,
+            "is_currently_valid_mode": result.any_valid,
+            "prediction_signature": None,
+            "mechanism_family": None,
+            "coverage_per_available": result.coverage_per_available(state),
+            "any_valid": result.any_valid,
+            "error": None if result.format_valid else "missing_or_empty_answer_tags",
+        }
+    )
+    return data
+
+
+def _verification_results_for_record(record: dict[str, Any]) -> list[VerificationResult]:
+    verification = record["verification"]
+    candidates = verification.get("candidates")
+    if candidates:
+        return [
+            _verification_from_dict(candidate["verification"])
+            for candidate in candidates
+        ]
+    return [_verification_from_dict(verification)]
+
+
 def _mean_dicts(items: list[dict[str, float]]) -> dict[str, float]:
     if not items:
         return {}
@@ -215,18 +255,20 @@ def _grouped_set_records(
         )
         state = states_by_id[state_id]
         results = [
-            _verification_from_dict(record["verification"]) for record in state_records
+            result
+            for record in state_records
+            for result in _verification_results_for_record(record)
         ]
         metrics = group_metrics(results, state)
         valid_count = int(metrics["num_unique_valid_modes"] + metrics["duplicate_valid_modes"])
         metrics.update(
             {
-                "k": float(len(state_records)),
-                "valid_mode_rate": valid_count / max(1, len(state_records)),
+                "k": float(len(results)),
+                "valid_mode_rate": valid_count / max(1, len(results)),
                 "duplicate_rate": metrics["duplicate_valid_modes"]
-                / max(1, len(state_records)),
+                / max(1, len(results)),
                 "extra_duplicate_rate": metrics["extra_duplicate_valid_modes"]
-                / max(1, len(state_records)),
+                / max(1, len(results)),
             }
         )
         grouped.append(
@@ -262,11 +304,13 @@ def _grouped_summary_by(
 
 def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary = _summarize_group(records)
+    flat_results = [
+        result for record in records for result in _verification_results_for_record(record)
+    ]
     valid_modes = [
-        r["verification"]["semantic_mode_id"]
-        for r in records
-        if r["verification"]["is_currently_valid_mode"]
-        and r["verification"]["semantic_mode_id"]
+        result.semantic_mode_id
+        for result in flat_results
+        if result.is_currently_valid_mode and result.semantic_mode_id
     ]
     parse_errors = Counter(
         str(r["verification"].get("error"))
@@ -279,6 +323,15 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
             "duplicate_valid_modes": sum(count - 1 for count in Counter(valid_modes).values()),
             "invalid_format_count": sum(parse_errors.values()),
             "invalid_format_errors": dict(parse_errors.most_common(20)),
+            "candidate_outputs": len(flat_results),
+            "candidate_parse_valid": _mean([float(r.parse_valid) for r in flat_results]),
+            "candidate_syntax_valid": _mean([float(r.syntax_valid) for r in flat_results]),
+            "candidate_evidence_consistent": _mean(
+                [float(r.evidence_consistent) for r in flat_results]
+            ),
+            "candidate_currently_valid_mode": _mean(
+                [float(r.is_currently_valid_mode) for r in flat_results]
+            ),
             "by_M": _group_by(records, "valid_mode_count"),
             "by_separation_bucket": _group_by(records, "separation_bucket"),
             "by_family_bucket": _group_by(records, "family_bucket"),
@@ -325,10 +378,16 @@ def evaluate_states(
     on_record: Callable[[dict[str, Any]], None] | None = None,
     on_progress: Callable[[int, int], None] | None = None,
     progress_interval_s: float = 60.0,
+    output_mode: str = "single",
+    answer_count: int = 1,
 ) -> list[dict[str, Any]]:
     jobs = []
     for state_index, state in enumerate(states):
-        prompt = build_prompt(state)
+        prompt = build_prompt(
+            state,
+            output_mode=output_mode,
+            answer_count=answer_count,
+        )
         messages = [
             ChatMessage(
                 role="system",
@@ -349,7 +408,17 @@ def evaluate_states(
             elapsed = time.monotonic() - started
             output = response.content
             thinking = response.thinking
-            verification = verify_output(output, state).as_dict()
+            if output_mode == "multi_answer_rlvr":
+                verification = _set_verification_to_eval_dict(
+                    verify_output_set(
+                        output,
+                        state,
+                        expected_count=answer_count,
+                    ),
+                    state,
+                )
+            else:
+                verification = verify_output(output, state).as_dict()
             request_error = None
         except Exception as exc:  # noqa: BLE001
             elapsed = time.monotonic() - started
@@ -366,6 +435,26 @@ def evaluate_states(
                 "mechanism_family": None,
                 "error": request_error,
             }
+            if output_mode == "multi_answer_rlvr":
+                verification.update(
+                    {
+                        "output_mode": "multi_answer_rlvr",
+                        "expected_count": answer_count,
+                        "candidate_count": 0,
+                        "format_valid": False,
+                        "parse_valid_count": 0,
+                        "syntax_valid_count": 0,
+                        "evidence_consistent_count": 0,
+                        "valid_count": 0,
+                        "valid_mode_ids": [],
+                        "unique_valid_mode_ids": [],
+                        "duplicate_valid_modes": 0,
+                        "coverage_per_k": 0.0,
+                        "coverage_per_available": 0.0,
+                        "any_valid": False,
+                        "candidates": [],
+                    }
+                )
         record = {
             "sample_id": sample_id,
             "state_index": state_index,
@@ -481,30 +570,40 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             partial_handle.write(json.dumps(record, sort_keys=True) + "\n")
             partial_handle.flush()
             if wandb_run is not None:
-                wandb_run.log(
-                    {
-                        "eval/parse_valid": float(
-                            record["verification"]["parse_valid"]
-                        ),
-                        "eval/syntax_valid": float(
-                            record["verification"]["syntax_valid"]
-                        ),
-                        "eval/evidence_consistent": float(
-                            record["verification"]["evidence_consistent"]
-                        ),
-                        "eval/currently_valid_mode": float(
-                            record["verification"]["is_currently_valid_mode"]
-                        ),
-                        "eval/nonempty_output": float(bool(record["output"].strip())),
-                        "eval/request_error": float(bool(record["request_error"])),
-                        "eval/model_seconds": float(record["model_seconds"]),
-                        "eval/state_index": int(record["state_index"]),
-                        "eval/rollout_index": int(record["rollout_index"]),
-                        "eval/M": int(
-                            record["state_metadata"]["valid_mode_count"]
-                        ),
-                    }
-                )
+                metrics = {
+                    "eval/parse_valid": float(record["verification"]["parse_valid"]),
+                    "eval/syntax_valid": float(record["verification"]["syntax_valid"]),
+                    "eval/evidence_consistent": float(
+                        record["verification"]["evidence_consistent"]
+                    ),
+                    "eval/currently_valid_mode": float(
+                        record["verification"]["is_currently_valid_mode"]
+                    ),
+                    "eval/nonempty_output": float(bool(record["output"].strip())),
+                    "eval/request_error": float(bool(record["request_error"])),
+                    "eval/model_seconds": float(record["model_seconds"]),
+                    "eval/state_index": int(record["state_index"]),
+                    "eval/rollout_index": int(record["rollout_index"]),
+                    "eval/M": int(record["state_metadata"]["valid_mode_count"]),
+                }
+                for key in (
+                    "format_valid",
+                    "candidate_count",
+                    "parse_valid_count",
+                    "syntax_valid_count",
+                    "evidence_consistent_count",
+                    "valid_count",
+                    "duplicate_valid_modes",
+                    "coverage_per_k",
+                    "coverage_per_available",
+                    "any_valid",
+                ):
+                    value = record["verification"].get(key)
+                    if isinstance(value, bool):
+                        metrics[f"eval/{key}"] = float(value)
+                    elif isinstance(value, int | float):
+                        metrics[f"eval/{key}"] = value
+                wandb_run.log(metrics)
 
         def on_progress(completed: int, total: int) -> None:
             pending = total - completed
@@ -533,6 +632,8 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             on_record=on_record,
             on_progress=on_progress,
             progress_interval_s=30.0,
+            output_mode=args.output_mode,
+            answer_count=args.answer_count,
         )
 
     with episodes_path.open("w", encoding="utf-8") as handle:
@@ -623,6 +724,12 @@ def main() -> None:
     parser.add_argument("--top-p", type=float, default=0.9)
     parser.add_argument("--request-timeout-s", type=float, default=180.0)
     parser.add_argument("--think", default=True)
+    parser.add_argument(
+        "--output-mode",
+        choices=["single", "multi_answer_rlvr"],
+        default="single",
+    )
+    parser.add_argument("--answer-count", type=int, default=1)
     parser.add_argument("--transcripts", action="store_true")
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-run-name")
@@ -631,6 +738,8 @@ def main() -> None:
         raise SystemExit("--rollouts-per-state must be >= 1")
     if args.workers < 1:
         raise SystemExit("--workers must be >= 1")
+    if args.answer_count < 1:
+        raise SystemExit("--answer-count must be >= 1")
     output_dir, summary = run_eval(args)
     print(json.dumps({"output_dir": str(output_dir), "summary": summary}, indent=2))
 

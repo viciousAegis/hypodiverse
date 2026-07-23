@@ -18,6 +18,7 @@ from scattered_discovery.envs.causal_micro_lab.parser import (
     parse_hypothesis,
     parse_hypothesis_json,
     parse_hypothesis_rules,
+    parse_hypothesis_set,
 )
 from scattered_discovery.envs.causal_micro_lab.planner import (
     oracle_disagreement_experiment,
@@ -47,7 +48,7 @@ from scattered_discovery.envs.causal_micro_lab.tables import (
     verl_rows_for_states,
     write_table,
 )
-from scattered_discovery.envs.causal_micro_lab.verifier import verify_output
+from scattered_discovery.envs.causal_micro_lab.verifier import verify_output, verify_output_set
 from scattered_discovery.envs.causal_micro_lab.eval import (
     evaluate_states,
     summarize_grouped_records,
@@ -174,6 +175,33 @@ class CausalMicroLabTests(unittest.TestCase):
         invalid = verify_output("Z1 = COPY(X1)", self.state, mode_table=self.table)
         self.assertFalse(invalid.parse_valid)
 
+    def test_multi_answer_parser_and_verifier(self):
+        valid_text = self.table.modes_by_id[
+            self.state.valid_mode_ids[0]
+        ].canonical.render_flat_rules()
+        second_valid = self.table.modes_by_id[
+            self.state.valid_mode_ids[1]
+        ].canonical.render_flat_rules()
+        payload = (
+            f"<answer1>\n{valid_text}\n</answer1>\n"
+            "<answer2>\nnot a hypothesis\n</answer2>\n"
+            f"<answer4>\n{second_valid}\n</answer4>\n"
+        )
+        candidates = parse_hypothesis_set(payload, expected_count=4)
+        self.assertEqual([item.index for item in candidates], [1, 2, 4])
+        result = verify_output_set(
+            payload,
+            self.state,
+            expected_count=4,
+            mode_table=self.table,
+        )
+        self.assertFalse(result.format_valid)
+        self.assertEqual(result.candidate_count, 3)
+        self.assertEqual(result.parse_valid_count, 2)
+        self.assertEqual(len(result.unique_valid_mode_ids), 2)
+        self.assertEqual(result.coverage_per_k(), 0.5)
+        self.assertEqual(result.coverage_per_available(self.state), 0.5)
+
     def test_env_rewards_nonempty_final_output(self):
         env = make_env(
             {
@@ -258,6 +286,43 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertEqual(dense_breakdown["commit_format"], 0.2)
         self.assertEqual(dense.score.reward, 0.55)
 
+    def test_multi_answer_rlvr_env_reward(self):
+        valid_text = self.table.modes_by_id[
+            self.state.valid_mode_ids[0]
+        ].canonical.render_flat_rules()
+        parts = []
+        for index in range(1, 5):
+            parts.extend(
+                [
+                    f"<answer{index}>",
+                    valid_text if index == 1 else "not a hypothesis",
+                    f"</answer{index}>",
+                ]
+            )
+        env = make_env(
+            {
+                "env_type": "causal_micro_lab",
+                "task": {
+                    "state": self.state.to_record(
+                        mode_table=self.table,
+                        include_private=True,
+                    ),
+                    "output_mode": "multi_answer_rlvr",
+                    "answer_count": 4,
+                    "multi_answer_format_reward": 0.5,
+                    "multi_answer_accuracy_reward": 0.5,
+                    "multi_answer_accuracy_mode": "any_valid",
+                },
+                "max_steps": 1,
+            }
+        )
+        step = env.step("\n".join(parts))
+        self.assertTrue(step.parse_ok)
+        self.assertAlmostEqual(step.reward, 1.0)
+        self.assertEqual(step.metrics["multi_answer_expected_count"], 4)
+        self.assertEqual(step.metrics["multi_answer_unique_valid_modes"], 1)
+        self.assertEqual(step.metrics["multi_answer_coverage_per_k"], 0.25)
+
     def test_version_space_group_metrics_and_planner(self):
         self.assertEqual(
             set(valid_modes_for_evidence(self.state.evidence, mode_table=self.table)),
@@ -302,6 +367,9 @@ class CausalMicroLabTests(unittest.TestCase):
                 "nonempty_output_reward": 0.0,
                 "syntax_valid_reward": 0.2,
                 "valid_hypothesis_reward": 1.0,
+                "output_mode": "multi_answer_rlvr",
+                "answer_count": 4,
+                "multi_answer_accuracy_mode": "any_valid",
             },
             agent_overrides={
                 "length_penalty_start": 3072,
@@ -315,6 +383,10 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertEqual(parsed["task"]["nonempty_output_reward"], 0.0)
         self.assertEqual(parsed["task"]["syntax_valid_reward"], 0.2)
         self.assertEqual(parsed["task"]["valid_hypothesis_reward"], 1.0)
+        self.assertEqual(parsed["task"]["output_mode"], "multi_answer_rlvr")
+        self.assertEqual(parsed["task"]["answer_count"], 4)
+        self.assertEqual(parsed["task"]["multi_answer_accuracy_mode"], "any_valid")
+        self.assertIn("<answer4>", verl_rows[0]["prompt"])
         self.assertEqual(parsed["agent"]["length_penalty_start"], 3072)
         self.assertEqual(parsed["agent"]["length_penalty_max"], -0.2)
         self.assertFalse(parsed["agent"]["mask_truncated"])

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from scattered_discovery.envs.causal_micro_lab.dsl import (
@@ -17,6 +18,12 @@ class HypothesisParseError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class HypothesisCandidate:
+    index: int
+    text: str
+
+
 _RULE_LINE_RE = re.compile(
     r"^\s*(Z1|Z2|Y)\s*(?:=|:=)\s*(COPY|NOT|AND|OR|XOR)\s*\(([^()]*)\)\s*$",
     re.IGNORECASE,
@@ -24,6 +31,10 @@ _RULE_LINE_RE = re.compile(
 _FLAT_RULE_LINE_RE = re.compile(
     r"^\s*(Z1|Z2|Y)\s*(?::|=|:=)?\s+(COPY|NOT|AND|OR|XOR)\s+([A-Za-z0-9_\s,]+?)\s*$",
     re.IGNORECASE,
+)
+_ANSWER_TAG_RE = re.compile(
+    r"<answer(?P<index>\d+)>\s*(?P<body>.*?)\s*</answer(?P=index)>",
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -111,6 +122,18 @@ def parse_hypothesis(text: str, *, strict: bool = True):
     if value.startswith("{") or value.startswith("["):
         return parse_hypothesis_json(value, strict=strict)
     return parse_hypothesis_rules(value)
+
+
+def parse_hypothesis_set(text: str, *, expected_count: int | None = None) -> list[HypothesisCandidate]:
+    value = _strip_fence(text)
+    candidates = [
+        HypothesisCandidate(index=int(match.group("index")), text=match.group("body").strip())
+        for match in _ANSWER_TAG_RE.finditer(value)
+    ]
+    candidates.sort(key=lambda item: item.index)
+    if expected_count is not None:
+        return [item for item in candidates if 1 <= item.index <= expected_count]
+    return candidates
 
 
 def parse_hypothesis_json(text: str, *, strict: bool = True):

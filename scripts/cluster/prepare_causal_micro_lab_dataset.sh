@@ -19,6 +19,7 @@ eval_output_dir="${CML_EVAL_OUTPUT_DIR:-}"
 eval_preset="${CML_EVAL_PRESET:-canonical_eval}"
 eval_seed="${CML_EVAL_SEED:-1}"
 target_counts="${CML_TARGET_COUNTS:-4,8,16}"
+agent_name="${CML_AGENT_NAME:-causal_micro_lab_agent_loop}"
 progress_every="${CML_PROGRESS_EVERY:-128}"
 rebuild_dataset="${CML_REBUILD_DATASET:-0}"
 
@@ -60,6 +61,21 @@ if [[ -n "${CML_EVIDENCE_CONSISTENT_REWARD:-}" ]]; then
 fi
 if [[ -n "${CML_VALID_HYPOTHESIS_REWARD:-}" ]]; then
   reward_args+=(--valid-hypothesis-reward "$CML_VALID_HYPOTHESIS_REWARD")
+fi
+if [[ -n "${CML_OUTPUT_MODE:-}" ]]; then
+  reward_args+=(--output-mode "$CML_OUTPUT_MODE")
+fi
+if [[ -n "${CML_ANSWER_COUNT:-}" ]]; then
+  reward_args+=(--answer-count "$CML_ANSWER_COUNT")
+fi
+if [[ -n "${CML_MULTI_ANSWER_FORMAT_REWARD:-}" ]]; then
+  reward_args+=(--multi-answer-format-reward "$CML_MULTI_ANSWER_FORMAT_REWARD")
+fi
+if [[ -n "${CML_MULTI_ANSWER_ACCURACY_REWARD:-}" ]]; then
+  reward_args+=(--multi-answer-accuracy-reward "$CML_MULTI_ANSWER_ACCURACY_REWARD")
+fi
+if [[ -n "${CML_MULTI_ANSWER_ACCURACY_MODE:-}" ]]; then
+  reward_args+=(--multi-answer-accuracy-mode "$CML_MULTI_ANSWER_ACCURACY_MODE")
 fi
 if [[ -n "${CAUSAL_MICRO_LAB_LENGTH_PENALTY_START:-}" ]]; then
   reward_args+=(--length-penalty-start "$CAUSAL_MICRO_LAB_LENGTH_PENALTY_START")
@@ -103,6 +119,10 @@ def maybe_int(name):
     raw = os.environ.get(name)
     return None if raw in (None, "") else int(raw)
 
+def maybe_str(name):
+    raw = os.environ.get(name)
+    return None if raw in (None, "") else raw
+
 expected_counts = {
     key: value
     for key, value in {
@@ -130,6 +150,11 @@ expected_task = {
         "syntax_valid_reward": maybe_float("CML_SYNTAX_VALID_REWARD"),
         "evidence_consistent_reward": maybe_float("CML_EVIDENCE_CONSISTENT_REWARD"),
         "valid_hypothesis_reward": maybe_float("CML_VALID_HYPOTHESIS_REWARD"),
+        "output_mode": maybe_str("CML_OUTPUT_MODE"),
+        "answer_count": maybe_int("CML_ANSWER_COUNT"),
+        "multi_answer_format_reward": maybe_float("CML_MULTI_ANSWER_FORMAT_REWARD"),
+        "multi_answer_accuracy_reward": maybe_float("CML_MULTI_ANSWER_ACCURACY_REWARD"),
+        "multi_answer_accuracy_mode": maybe_str("CML_MULTI_ANSWER_ACCURACY_MODE"),
     }.items()
     if value is not None
 }
@@ -142,6 +167,10 @@ expected_agent = {
     }.items()
     if value is not None
 }
+expected_agent_name = os.environ.get(
+    "CML_AGENT_NAME",
+    "causal_micro_lab_agent_loop",
+)
 
 manifest = Path(sys.argv[1])
 rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines() if line.strip()]
@@ -153,6 +182,7 @@ ok = (
     and all(actual_caps.get(key) == value for key, value in expected_caps.items())
     and latest.get("verl_task_overrides", {}) == expected_task
     and latest.get("verl_agent_overrides", {}) == expected_agent
+    and latest.get("verl_agent_name", "causal_micro_lab_agent_loop") == expected_agent_name
 )
 raise SystemExit(0 if ok else 1)
 ' "$output_dir/manifest.jsonl"; then
@@ -177,10 +207,11 @@ sys.argv = [
     "--seed", sys.argv[3],
     "--progress-every", sys.argv[4],
     "--target-counts", sys.argv[5],
-    *sys.argv[6:],
+    "--agent-name", sys.argv[6],
+    *sys.argv[7:],
 ]
 build_split_dataset_main()
-' "$preset" "$output_dir" "$seed" "$progress_every" "$target_counts" "${dataset_args[@]}" "${reward_args[@]}"
+' "$preset" "$output_dir" "$seed" "$progress_every" "$target_counts" "$agent_name" "${dataset_args[@]}" "${reward_args[@]}"
 }
 
 build_dataset "train/pilot" "$dataset_preset" "$dataset_output_dir" "$dataset_seed"

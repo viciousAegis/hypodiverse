@@ -1,0 +1,69 @@
+# Two-GPU Blackwell causal micro-lab Multi-Answer RLVR baseline.
+# Mirrors Puri et al.'s multi-answer setup: one completion emits K answers and
+# reward is format + any-valid accuracy. K is intentionally small for the first run.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 1
+causal_micro_lab_rebuild_dataset: 0
+causal_micro_lab_dataset_preset: trainable
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/trainable_multi_k4
+causal_micro_lab_dataset_seed: 1
+causal_micro_lab_target_counts: 4,8,16
+causal_micro_lab_val_states_per_count: 43
+causal_micro_lab_test_states_per_count: 43
+causal_micro_lab_val_max_rows: 128
+causal_micro_lab_test_max_rows: 128
+causal_micro_lab_progress_every: 512
+
+# Multi-Answer RLVR task:
+#   format reward: all <answer1>...</answer1> through <answer4>...</answer4>
+#   accuracy reward: any candidate hypothesis is evidence-valid
+causal_micro_lab_output_mode: multi_answer_rlvr
+causal_micro_lab_answer_count: 4
+causal_micro_lab_multi_answer_format_reward: 0.5
+causal_micro_lab_multi_answer_accuracy_reward: 0.5
+causal_micro_lab_multi_answer_accuracy_mode: any_valid
+
+# Single-answer shaping is disabled for this baseline.
+causal_micro_lab_nonempty_output_reward: 0.0
+causal_micro_lab_rule_marker_reward: 0.0
+causal_micro_lab_parse_valid_reward: 0.0
+causal_micro_lab_syntax_valid_reward: 0.0
+causal_micro_lab_evidence_consistent_reward: 0.0
+causal_micro_lab_valid_hypothesis_reward: 1.0
+
+# Overlong shaping for thinking runs.
+causal_micro_lab_length_penalty_start: 6000
+causal_micro_lab_length_penalty_max: -0.2
+causal_micro_lab_mask_truncated: 1
+
+discovery_algo: grpo
+model_id: Qwen/Qwen3-4B
+model_basename: causal_micro_lab_nothink_warmup_gs4_hf
+download_model: 0
+attn_implementation: sdpa
+use_remove_padding: "False"
+default_agent_loop: causal_micro_lab_agent_loop
+
+train_file: data/causal_micro_lab/trainable_multi_k4/verl_train.jsonl
+val_file: data/causal_micro_lab/trainable_multi_k4/verl_val.jsonl
+
+n_gpus_per_node: 2
+train_batch_size: 16
+ppo_mini_batch_size: 8
+rollout_n: 8
+rollout_tp: 1
+rollout_gpu_mem_util: 0.50
+actor_micro_batch_size_per_gpu: 1
+rollout_log_prob_micro_batch_size_per_gpu: 1
+ref_log_prob_micro_batch_size_per_gpu: 1
+actor_lr: 1e-6
+kl_loss_coef: 0.001
+entropy_coeff: 0
+
+total_epochs: 1
+save_freq: 10
+test_freq: 10
+max_prompt_length: 2048
+max_response_length: 12000
+experiment_name_prefix: causal_micro_lab_blackwell_multi_answer_rlvr_k4

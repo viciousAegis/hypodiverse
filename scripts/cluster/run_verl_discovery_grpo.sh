@@ -105,6 +105,7 @@ ROLLOUT_TP=${ROLLOUT_TP:-1}
 ROLLOUT_GPU_MEM_UTIL=${ROLLOUT_GPU_MEM_UTIL:-0.55}
 ROLLOUT_N=${ROLLOUT_N:-4}
 DEFAULT_AGENT_LOOP=${DEFAULT_AGENT_LOOP:-discovery_agent_loop}
+AGENT_LOOP_CONFIG_PATH=${AGENT_LOOP_CONFIG_PATH:-configs/verl/agent_loop.yaml}
 
 ATTN_IMPLEMENTATION=${ATTN_IMPLEMENTATION:-sdpa}
 USE_REMOVE_PADDING=${USE_REMOVE_PADDING:-False}
@@ -123,6 +124,7 @@ PROJECT_NAME=${PROJECT_NAME:-scattered-discovery}
 EXPERIMENT_NAME=${EXPERIMENT_NAME:-discovery_grpo_${INFER_BACKEND}_$(date +%Y%m%d_%H%M)}
 WANDB_LOGGER=${WANDB_LOGGER:-'["console","wandb"]'}
 DISCOVERY_ALGO=${DISCOVERY_ALGO:-grpo}
+TRAINER_ENTRYPOINT=${TRAINER_ENTRYPOINT:-verl.trainer.main_ppo}
 
 mapfile -t ALGO < <(
   python3 -m scattered_discovery.algos.cli \
@@ -171,13 +173,15 @@ ROLLOUT=(
   actor_rollout_ref.rollout.tensor_model_parallel_size="${ROLLOUT_TP}"
   actor_rollout_ref.rollout.gpu_memory_utilization="${ROLLOUT_GPU_MEM_UTIL}"
   actor_rollout_ref.rollout.n="${ROLLOUT_N}"
+  actor_rollout_ref.rollout.temperature="${TEMPERATURE:-1.0}"
+  actor_rollout_ref.rollout.top_p="${TOP_P:-1.0}"
 
   actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=False
   actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu="${ROLLOUT_LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
 
   actor_rollout_ref.rollout.multi_turn.enable=True
   actor_rollout_ref.rollout.multi_turn.tokenization_sanity_check_mode=ignore_strippable
-  actor_rollout_ref.rollout.agent.agent_loop_config_path=configs/verl/agent_loop.yaml
+  actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
   actor_rollout_ref.rollout.agent.default_agent_loop="${DEFAULT_AGENT_LOOP}"
 )
 
@@ -207,15 +211,34 @@ TRAINER=(
   trainer.total_epochs="${TOTAL_EPOCHS}"
 )
 
+if [[ -n "${TOTAL_TRAINING_STEPS:-}" ]]; then
+  TRAINER+=(trainer.total_training_steps="${TOTAL_TRAINING_STEPS}")
+fi
+
+CD_GRPO=()
+if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
+  CD_GRPO=(
+    +algorithm.cd_grpo.variant="${CD_GRPO_VARIANT:-logdet}"
+    +algorithm.cd_grpo.archive="${CD_GRPO_ARCHIVE:-true}"
+    +algorithm.cd_grpo.beta="${CD_GRPO_BETA:-0.3}"
+    +algorithm.cd_grpo.beta_guard="${CD_GRPO_BETA_GUARD:-true}"
+    +algorithm.cd_grpo.beta_guard_window="${CD_GRPO_BETA_GUARD_WINDOW:-50}"
+    +algorithm.cd_grpo.ell="${CD_GRPO_ELL:-0.25}"
+    +algorithm.cd_grpo.gamma="${CD_GRPO_GAMMA:-0.7}"
+    +algorithm.cd_grpo.probe_fraction="${CD_GRPO_PROBE_FRACTION:-1.0}"
+  )
+fi
+
 if [[ -n "$RESUME_FROM_PATH" ]]; then
   TRAINER+=(trainer.resume_from_path="${RESUME_FROM_PATH}")
 fi
 
-python3 -m verl.trainer.main_ppo \
+"${PYTHON_BIN:-python3}" -m "$TRAINER_ENTRYPOINT" \
   "${DATA[@]}" \
   "${MODEL[@]}" \
   "${ACTOR[@]}" \
   "${ROLLOUT[@]}" \
   "${REF[@]}" \
   "${TRAINER[@]}" \
+  "${CD_GRPO[@]}" \
   "$@"

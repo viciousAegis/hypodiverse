@@ -249,6 +249,11 @@ def verl_rows_for_states(
     for index, state in enumerate(states):
         state_record = state.to_record(mode_table=table, include_private=True)
         task = {"state": state_record, **(task_overrides or {})}
+        prompt = build_prompt(
+            state,
+            output_mode=task.get("output_mode", "single"),
+            answer_count=int(task.get("answer_count", 1)),
+        )
         spec = EnvSpec(
             env_type="causal_micro_lab",
             task=task,
@@ -262,8 +267,8 @@ def verl_rows_for_states(
                 "index": index,
                 "data_source": data_source,
                 "agent_name": agent_name,
-                "prompt": build_prompt(state),
-                "raw_prompt": build_prompt(state),
+                "prompt": prompt,
+                "raw_prompt": prompt,
                 "env_spec_json": json.dumps(
                     {
                         "env_type": spec.env_type,
@@ -386,6 +391,7 @@ def build_split_dataset(
     source_splits: dict[str, str] | None = None,
     verl_task_overrides: dict[str, Any] | None = None,
     verl_agent_overrides: dict[str, Any] | None = None,
+    verl_agent_name: str = "causal_micro_lab_agent_loop",
     include_verl: bool = True,
     progress: ProgressFn | None = None,
     progress_every: int = 25,
@@ -469,6 +475,7 @@ def build_split_dataset(
             verl_path = write_table(
                 verl_rows_for_states(
                     states,
+                    agent_name=verl_agent_name,
                     data_source=f"causal_micro_lab_{split}",
                     task_overrides=verl_task_overrides,
                     agent_overrides=verl_agent_overrides,
@@ -493,6 +500,7 @@ def build_split_dataset(
         "include_verl": include_verl,
         "verl_task_overrides": verl_task_overrides or {},
         "verl_agent_overrides": verl_agent_overrides or {},
+        "verl_agent_name": verl_agent_name,
         "mode_split_counts": {
             split: len(split_ids[split])
             for split in SPLIT_NAMES

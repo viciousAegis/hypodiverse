@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
 
 
-def build_prompt(state: EvidenceState) -> str:
+def build_prompt(
+    state: EvidenceState,
+    *,
+    output_mode: Literal["single", "multi_answer_rlvr"] = "single",
+    answer_count: int = 1,
+) -> str:
     lines = [
         "Infer one Boolean causal program consistent with the evidence.",
         "",
@@ -40,18 +47,38 @@ def build_prompt(state: EvidenceState) -> str:
                 "",
             ]
         )
-    lines.extend(
-        [
-            "",
-            "Return exactly three lines, no extra text.",
-            "Use this flat format:",
-            "Z1: OP input [input]",
-            "Z2: OP input [input]",
-            "Y: OP input [input]",
-            "Example:",
-            "Z1: AND X1 X2",
-            "Z2: OR X2 Z1",
-            "Y: XOR X3 Z1",
-        ]
-    )
+    if output_mode == "multi_answer_rlvr":
+        lines.extend(
+            [
+                "",
+                f"Return exactly {answer_count} candidate hypotheses.",
+                f"Use exactly these tags: <answer1>...</answer1> through <answer{answer_count}>...</answer{answer_count}>.",
+                "Inside each answer tag, return exactly three rule lines and no extra text.",
+                "Use this flat format inside each tag:",
+                "Z1: OP input [input]",
+                "Z2: OP input [input]",
+                "Y: OP input [input]",
+                "Example:",
+                "<answer1>",
+                "Z1: AND X1 X2",
+                "Z2: OR X2 Z1",
+                "Y: XOR X3 Z1",
+                "</answer1>",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "Return exactly three lines, no extra text.",
+                "Use this flat format:",
+                "Z1: OP input [input]",
+                "Z2: OP input [input]",
+                "Y: OP input [input]",
+                "Example:",
+                "Z1: AND X1 X2",
+                "Z2: OR X2 Z1",
+                "Y: XOR X3 Z1",
+            ]
+        )
     return "\n".join(lines)

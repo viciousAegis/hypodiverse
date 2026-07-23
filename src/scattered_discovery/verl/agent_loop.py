@@ -7,6 +7,9 @@ from typing import Any
 from uuid import uuid4
 
 from scattered_discovery.backends.base import split_visible_thinking
+from scattered_discovery.envs.causal_micro_lab.consequence_reward import (
+    evaluate_consequences,
+)
 from scattered_discovery.envs.factory import make_env
 from scattered_discovery.verl.qwen3_tokenization import observation_token_ids
 
@@ -461,6 +464,147 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 "reward_extra_info": metrics,
                 "score": {**score.as_dict(), "reward": reward_score},
                 "diagnostics": diagnostics,
+                "transcript": transcript,
+            },
+        )
+
+
+@register("cd_grpo_agent_loop")
+class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
+    """Single-shot rollout with an oracle-free train-time reward payload."""
+
+    async def run(self, sampling_params: dict[str, Any], **kwargs) -> Any:
+        if AgentLoopOutput is None or AgentLoopMetrics is None:
+            raise RuntimeError("CDGRPOAgentLoop requires veRL to be installed.")
+
+        env_spec = json.loads(_as_text(kwargs["env_spec_json"]))
+        state_record = json.loads(_as_text(kwargs["state_json"]))
+        agent_config = env_spec.get("agent") or {}
+        max_response_length = int(self.rollout_config.response_length)
+        request_id = _as_text(kwargs.get("uid", uuid4().hex))
+        prompt = _as_text(kwargs.get("raw_prompt") or kwargs.get("prompt"))
+        messages = [
+            {
+                "role": "system",
+                "content": "You are solving a single-shot scientific hypothesis generation task.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+        prompt_ids = await self.apply_chat_template(messages)
+
+        started = time.monotonic()
+        output = await self.server_manager.generate(
+            request_id=request_id,
+            prompt_ids=prompt_ids,
+            sampling_params=sampling_params,
+        )
+        elapsed = time.monotonic() - started
+        response_ids = list(output.token_ids)
+        raw_response_length = len(response_ids)
+        cap_hit = max_response_length > 0 and raw_response_length >= max_response_length
+        raw_assistant_text = self.tokenizer.decode(
+            response_ids,
+            skip_special_tokens=True,
+        )
+        assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
+
+        cd_config = self.config.algorithm.get("cd_grpo", {})
+        consequence = evaluate_consequences(
+            assistant_text,
+            state_record,
+            truncated=cap_hit,
+            probe_fraction=float(cd_config.get("probe_fraction", 1.0)),
+        )
+        length_penalty_start = _config_int(
+            agent_config,
+            "length_penalty_start",
+            "CAUSAL_MICRO_LAB_LENGTH_PENALTY_START",
+            int(max_response_length * 0.75),
+        )
+        length_penalty_max = _config_float(
+            agent_config,
+            "length_penalty_max",
+            "CAUSAL_MICRO_LAB_LENGTH_PENALTY_MAX",
+            -0.2,
+        )
+        length_penalty = _causal_micro_lab_length_cap_penalty(
+            response_length=raw_response_length,
+            max_response_length=max_response_length,
+            soft_start=length_penalty_start,
+            max_penalty=length_penalty_max,
+        )
+        validity_reward = 1.0 if consequence.valid else 0.0
+        reward_score = validity_reward + length_penalty
+
+        response_mask = [1] * len(response_ids)
+        response_ids, response_mask = _truncate_response_budget(
+            response_ids,
+            response_mask,
+            max_response_length=max_response_length,
+        )
+        mask_truncated = _config_bool(
+            agent_config,
+            "mask_truncated",
+            "CAUSAL_MICRO_LAB_MASK_TRUNCATED",
+            False,
+        ) and cap_hit
+        if mask_truncated:
+            response_mask = [0] * len(response_mask)
+        if not response_ids:
+            response_ids = [self.tokenizer.eos_token_id]
+            response_mask = [0]
+
+        reward_payload = {
+            "status": consequence.status.value,
+            "state_id": consequence.state_id,
+            "consequence_signature": consequence.consequence_signature,
+            "behavior_key": consequence.behavior_key,
+        }
+        metadata = state_record.get("metadata") or {}
+        eval_payload = {
+            "valid_mode_count": int(metadata.get("valid_mode_count", 0)),
+            "separation_bucket": str(
+                metadata.get("separation_bucket", "unknown")
+            ),
+            "family_bucket": str(metadata.get("family_bucket", "unknown")),
+        }
+        metrics = {
+            "terminal_reward": float(reward_score),
+            "base_terminal_reward": float(validity_reward),
+            "validity": float(consequence.valid),
+            "parse_valid": float(
+                consequence.status.value not in ("truncated", "parse_fail")
+            ),
+            "evidence_consistent": float(consequence.evidence_consistent),
+            "response_length_raw": float(raw_response_length),
+            "response_length_cap_hit": float(cap_hit),
+            "response_length_loss_masked": float(mask_truncated),
+            "reward_length_cap": float(length_penalty),
+            "cd_probe_count": float(len(consequence.probe_experiment_ids)),
+            "valid_mode_count": float(eval_payload["valid_mode_count"]),
+        }
+        transcript = [{"role": "assistant", "content": assistant_text}]
+        if thinking_text:
+            transcript[0]["thinking"] = thinking_text
+
+        return AgentLoopOutput(
+            prompt_ids=prompt_ids,
+            response_ids=response_ids,
+            response_mask=response_mask,
+            reward_score=reward_score,
+            num_turns=1,
+            metrics=AgentLoopMetrics(
+                generate_sequences=elapsed,
+                tool_calls=0.0,
+                compute_score=0.0,
+                num_preempted=int(output.num_preempted or 0),
+            ),
+            extra_fields={
+                "min_global_steps": 0,
+                "max_global_steps": 0,
+                "reward_extra_info": metrics,
+                "cd_reward_payload": reward_payload,
+                "cd_eval_payload": eval_payload,
                 "transcript": transcript,
             },
         )
