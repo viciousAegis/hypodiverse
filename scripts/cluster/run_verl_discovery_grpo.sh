@@ -178,12 +178,19 @@ ROLLOUT=(
 
   actor_rollout_ref.rollout.log_prob_use_dynamic_bsz=False
   actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu="${ROLLOUT_LOG_PROB_MICRO_BATCH_SIZE_PER_GPU}"
+  actor_rollout_ref.rollout.calculate_log_probs="${ROLLOUT_CALCULATE_LOG_PROBS:-False}"
 
   actor_rollout_ref.rollout.multi_turn.enable=True
   actor_rollout_ref.rollout.multi_turn.tokenization_sanity_check_mode=ignore_strippable
   actor_rollout_ref.rollout.agent.agent_loop_config_path="${AGENT_LOOP_CONFIG_PATH}"
   actor_rollout_ref.rollout.agent.default_agent_loop="${DEFAULT_AGENT_LOOP}"
 )
+
+if [[ -n "${SGLANG_ATTENTION_BACKEND:-}" ]]; then
+  ROLLOUT+=(
+    +actor_rollout_ref.rollout.engine_kwargs.sglang.attention_backend="${SGLANG_ATTENTION_BACKEND}"
+  )
+fi
 
 REF=(
   actor_rollout_ref.ref.log_prob_use_dynamic_bsz=False
@@ -218,6 +225,7 @@ fi
 CD_GRPO=()
 if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
   CD_GRPO=(
+    +actor_rollout_ref.rollout.agent.agent_loop_manager_class=scattered_discovery.verl.cd_grpo_trainer.CDGRPOAgentLoopManagerTQ
     +algorithm.cd_grpo.variant="${CD_GRPO_VARIANT:-logdet}"
     +algorithm.cd_grpo.archive="${CD_GRPO_ARCHIVE:-true}"
     +algorithm.cd_grpo.beta="${CD_GRPO_BETA:-0.3}"

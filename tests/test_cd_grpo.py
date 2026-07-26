@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from dataclasses import dataclass
 import json
 from pathlib import Path
 import tempfile
@@ -20,6 +21,13 @@ from scattered_discovery.envs.causal_micro_lab.consequence_reward import (
 )
 from scattered_discovery.verl.cd_grpo_trainer import (
     compute_cd_grpo_advantages,
+    sanitize_validation_reward_extras,
+    scatter_real_rows,
+    select_cd_payloads,
+)
+from scattered_discovery.verl.agent_loop import (
+    CDGRPOAgentLoop,
+    _generation_log_probs,
 )
 from scattered_discovery.envs.causal_micro_lab.interventions import (
     enumerate_experiments,
@@ -173,22 +181,87 @@ class ConsequenceDiversityTests(unittest.TestCase):
 
 
 class CDGRPOConfigTests(unittest.TestCase):
-    def test_cluster_yaml_selects_cd_agent_and_entrypoint(self):
+    def test_cd_run_yamls_recompute_old_log_probs(self):
         import yaml
 
-        path = (
+        paths = sorted(
+            (Path(__file__).parents[1] / "configs/verl/runs").glob(
+                "causal_micro_lab_*_cd_grpo*.yaml"
+            )
+        )
+        self.assertEqual(len(paths), 5)
+        for path in paths:
+            with self.subTest(path=path.name):
+                config = yaml.safe_load(path.read_text(encoding="utf-8"))
+                self.assertEqual(
+                    config["trainer_entrypoint"],
+                    "scattered_discovery.verl.cd_grpo_main",
+                )
+                self.assertEqual(config["rollout_n"], 16)
+                self.assertEqual(config["rollout_calculate_log_probs"], "False")
+
+        launcher = (
             Path(__file__).parents[1]
-            / "configs/verl/runs/causal_micro_lab_blackwell_cd_grpo_smoke.yaml"
+            / "scripts/cluster/run_verl_discovery_grpo.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "agent_loop_manager_class="
+            "scattered_discovery.verl.cd_grpo_trainer."
+            "CDGRPOAgentLoopManagerTQ",
+            launcher,
         )
-        config = yaml.safe_load(path.read_text(encoding="utf-8"))
-        self.assertEqual(config["causal_micro_lab_agent_name"], "cd_grpo_agent_loop")
-        self.assertEqual(config["default_agent_loop"], "cd_grpo_agent_loop")
+
+        smoke_path = next(
+            path
+            for path in paths
+            if path.name == "causal_micro_lab_cluster_cd_grpo_smoke.yaml"
+        )
+        smoke_config = yaml.safe_load(smoke_path.read_text(encoding="utf-8"))
         self.assertEqual(
-            config["trainer_entrypoint"],
-            "scattered_discovery.verl.cd_grpo_main",
+            smoke_config["causal_micro_lab_agent_name"],
+            "cd_grpo_agent_loop",
         )
-        self.assertEqual(config["rollout_n"], 16)
-        self.assertEqual(config["total_training_steps"], 2)
+        self.assertEqual(smoke_config["default_agent_loop"], "cd_grpo_agent_loop")
+        self.assertEqual(smoke_config["total_training_steps"], 10)
+
+    def test_generation_log_probs_are_required_and_aligned(self):
+        @dataclass
+        class Output:
+            log_probs: list[float] | None
+
+        self.assertEqual(
+            _generation_log_probs(
+                Output([-0.1, -0.2]),
+                expected_length=2,
+                required=True,
+            ),
+            [-0.1, -0.2],
+        )
+        self.assertIsNone(
+            _generation_log_probs(
+                Output(None),
+                expected_length=2,
+                required=False,
+            )
+        )
+        with self.assertRaisesRegex(RuntimeError, "returned none"):
+            _generation_log_probs(
+                Output(None),
+                expected_length=2,
+                required=True,
+            )
+        with self.assertRaisesRegex(RuntimeError, "length mismatch"):
+            _generation_log_probs(
+                Output([-0.1]),
+                expected_length=2,
+                required=True,
+            )
+
+    def test_cd_agent_loop_propagates_generation_log_probs(self):
+        import inspect
+
+        source = inspect.getsource(CDGRPOAgentLoop.run)
+        self.assertIn("response_logprobs=response_logprobs", source)
 
     def test_archive_json_is_plain_and_stable(self):
         archive = BehaviorArchive(counts={("s", "b"): 2.0})
@@ -197,6 +270,169 @@ class CDGRPOConfigTests(unittest.TestCase):
 
 
 class CDGRPOLoggingTests(unittest.TestCase):
+    def test_real_row_scatter_preserves_float_advantage_dtype(self):
+        import torch
+
+        integer_mask = torch.ones((4, 2), dtype=torch.long)
+        real_indices = torch.tensor([0, 2], dtype=torch.long)
+        real_advantages = torch.tensor(
+            [[0.25, -0.25], [1.0, -1.0]],
+            dtype=torch.float32,
+        )
+
+        scattered = scatter_real_rows(
+            integer_mask,
+            real_indices,
+            real_advantages,
+        )
+
+        self.assertEqual(scattered.dtype, torch.float32)
+        torch.testing.assert_close(scattered[real_indices], real_advantages)
+        torch.testing.assert_close(scattered[1], torch.zeros(2))
+        torch.testing.assert_close(scattered[3], torch.zeros(2))
+
+    def test_synthetic_padding_is_excluded_from_cd_payloads(self):
+        payload = {"state_id": "state-0", "status": "valid"}
+        real_indices, payloads, eval_payloads = select_cd_payloads(
+            [
+                {
+                    "cd_reward_payload": payload,
+                    "cd_eval_payload": {"valid_mode_count": 4},
+                },
+                {},
+            ],
+            [{}, {"is_padding": True}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(payloads, [payload])
+        self.assertEqual(eval_payloads, [{"valid_mode_count": 4}])
+
+    def test_missing_cd_payload_on_real_rollout_is_rejected(self):
+        with self.assertRaisesRegex(KeyError, "real rollout"):
+            select_cd_payloads([{}], [{}])
+
+    def test_nonvalid_payload_can_be_reconstructed_from_reward_metrics(self):
+        real_indices, payloads, eval_payloads = select_cd_payloads(
+            [
+                {
+                    "reward_extra_info": {
+                        "validity": 0.0,
+                        "parse_valid": 0.0,
+                        "response_length_cap_hit": 1.0,
+                        "valid_mode_count": 16.0,
+                    }
+                }
+            ],
+            [{}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(payloads[0]["status"], CandidateStatus.TRUNCATED.value)
+        self.assertIsNone(payloads[0]["consequence_signature"])
+        self.assertEqual(eval_payloads[0]["valid_mode_count"], 16)
+
+    def test_missing_payload_on_valid_rollout_is_rejected(self):
+        with self.assertRaisesRegex(KeyError, "valid rollout"):
+            select_cd_payloads(
+                [{"reward_extra_info": {"validity": 1.0}}],
+                [{}],
+            )
+
+    def test_cd_payload_falls_back_to_reward_extra_info(self):
+        payload = {"state_id": "state-0", "status": "valid"}
+        eval_payload = {"valid_mode_count": 8}
+        real_indices, payloads, eval_payloads = select_cd_payloads(
+            [
+                {
+                    "reward_extra_info": {
+                        "terminal_reward": 1.0,
+                        "cd_reward_payload": payload,
+                        "cd_eval_payload": eval_payload,
+                    }
+                }
+            ],
+            [{}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(payloads, [payload])
+        self.assertEqual(eval_payloads, [eval_payload])
+
+    def test_valid_payload_survives_as_transfer_queue_json_scalars(self):
+        payload = {
+            "state_id": "state-0",
+            "status": CandidateStatus.VALID.value,
+            "consequence_signature": "0101",
+            "behavior_key": "mode-7",
+        }
+        eval_payload = {
+            "valid_mode_count": 8,
+            "separation_bucket": "high",
+            "family_bucket": "mixed",
+        }
+        real_indices, payloads, eval_payloads = select_cd_payloads(
+            [
+                {
+                    "reward_extra_info": {
+                        "validity": 1.0,
+                        "parse_valid": 1.0,
+                        "response_length_cap_hit": 0.0,
+                        "cd_reward_payload_json": json.dumps(payload),
+                        "cd_eval_payload_json": json.dumps(eval_payload),
+                    }
+                }
+            ],
+            [{}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(payloads, [payload])
+        self.assertEqual(eval_payloads, [eval_payload])
+
+    def test_malformed_transfer_queue_payload_json_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "invalid JSON"):
+            select_cd_payloads(
+                [
+                    {
+                        "reward_extra_info": {
+                            "validity": 1.0,
+                            "cd_reward_payload_json": "{broken",
+                        }
+                    }
+                ],
+                [{}],
+            )
+
+    def test_incomplete_validation_auxiliary_series_is_excluded(self):
+        sanitized, missing_rates = sanitize_validation_reward_extras(
+            {
+                "reward": [1.0, 0.0],
+                "validity": [1.0, 0.0],
+                "optional_diagnostic": [None, 2.0],
+                "cd_reward_payload": [{"status": "valid"}, {"status": "invalid"}],
+                "cd_eval_payload": [
+                    {"valid_mode_count": 4},
+                    {"valid_mode_count": 8},
+                ],
+                "cd_reward_payload_json": ["{}", "{}"],
+                "cd_eval_payload_json": ["{}", "{}"],
+            }
+        )
+
+        self.assertEqual(
+            sanitized,
+            {
+                "reward": [1.0, 0.0],
+                "validity": [1.0, 0.0],
+            },
+        )
+        self.assertEqual(missing_rates, {"optional_diagnostic": 0.5})
+
+    def test_missing_validation_reward_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "reward series"):
+            sanitize_validation_reward_extras({"reward": [1.0, None]})
+
     def test_activation_advantage_archive_and_truncation_metrics(self):
         import torch
 

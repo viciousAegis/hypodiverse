@@ -1,11 +1,14 @@
-# Full two-GPU Blackwell CD-GRPO run. This differs from the smoke config only
-# in training duration and checkpoint/evaluation frequency.
+# Main validity-only GRPO baseline for one two-GPU Slurm node.
+#
+# Sixteen prompts x 8 rollouts produces 128 responses per update, matching the
+# CD-GRPO run's 8 prompts x 16 rollouts while preserving the original validity
+# baseline's GRPO group size.
 
 prepare_datasets: 0
 causal_micro_lab_generate_dataset_if_missing: 1
 causal_micro_lab_rebuild_dataset: 0
 causal_micro_lab_dataset_preset: trainable
-causal_micro_lab_dataset_output_dir: data/causal_micro_lab/cd_grpo
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/trainable
 causal_micro_lab_dataset_seed: 1
 causal_micro_lab_target_counts: 4,8,16
 causal_micro_lab_val_states_per_count: 43
@@ -13,44 +16,38 @@ causal_micro_lab_test_states_per_count: 43
 causal_micro_lab_val_max_rows: 128
 causal_micro_lab_test_max_rows: 128
 causal_micro_lab_progress_every: 512
-causal_micro_lab_agent_name: cd_grpo_agent_loop
 
+# Base reward ladder before overlong shaping:
+#   0.0 = empty or unparseable
+#   0.2 = syntax-valid but evidence-invalid hypothesis
+#   1.0 = evidence-valid hypothesis
 causal_micro_lab_nonempty_output_reward: 0.0
 causal_micro_lab_rule_marker_reward: 0.0
 causal_micro_lab_parse_valid_reward: 0.0
 causal_micro_lab_syntax_valid_reward: 0.2
 causal_micro_lab_evidence_consistent_reward: 0.0
 causal_micro_lab_valid_hypothesis_reward: 1.0
-causal_micro_lab_length_penalty_start: 4096
+
+# Match the CD-GRPO response budget and overlong handling.
+causal_micro_lab_length_penalty_start: 3072
 causal_micro_lab_length_penalty_max: -0.2
 causal_micro_lab_mask_truncated: 1
 
-trainer_entrypoint: scattered_discovery.verl.cd_grpo_main
-cd_grpo_variant: logdet
-cd_grpo_archive: "true"
-cd_grpo_beta: 0.3
-cd_grpo_beta_guard: "true"
-cd_grpo_beta_guard_window: 50
-cd_grpo_ell: 0.25
-cd_grpo_gamma: 0.7
-cd_grpo_probe_fraction: 1.0
-cd_grpo_length_penalty_start: 3072
-
 discovery_algo: grpo
 model_id: Qwen/Qwen3-4B
-model_basename: causal_micro_lab_nothink_warmup_gs4_hf
-download_model: 0
+model_basename: Qwen3-4B
+download_model: 1
 attn_implementation: sdpa
 use_remove_padding: "False"
-default_agent_loop: cd_grpo_agent_loop
+default_agent_loop: causal_micro_lab_agent_loop
 
-train_file: data/causal_micro_lab/cd_grpo/verl_train.jsonl
-val_file: data/causal_micro_lab/cd_grpo/verl_val.jsonl
+train_file: data/causal_micro_lab/trainable/verl_train.jsonl
+val_file: data/causal_micro_lab/trainable/verl_val.jsonl
 
 n_gpus_per_node: 2
-train_batch_size: 8
-ppo_mini_batch_size: 4
-rollout_n: 16
+train_batch_size: 16
+ppo_mini_batch_size: 8
+rollout_n: 8
 rollout_tp: 1
 rollout_gpu_mem_util: 0.50
 actor_micro_batch_size_per_gpu: 1
@@ -64,8 +61,13 @@ entropy_coeff: 0
 temperature: 1.0
 top_p: 1.0
 total_epochs: 1
+total_training_steps: 100
 save_freq: 10
 test_freq: 10
+max_actor_ckpt_to_keep: 1
+max_critic_ckpt_to_keep: 1
 max_prompt_length: 2048
 max_response_length: 6000
-experiment_name_prefix: causal_micro_lab_blackwell_cd_grpo_logdet
+
+# Stable naming makes an interrupted Slurm job resumable with the same command.
+experiment_name: causal_micro_lab_cluster_validity_grpo_r1

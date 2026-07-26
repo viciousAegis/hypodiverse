@@ -66,6 +66,28 @@ def _truncate_response_budget(
     return response_ids[:max_response_length], response_mask[:max_response_length]
 
 
+def _generation_log_probs(
+    output: Any,
+    *,
+    expected_length: int,
+    required: bool,
+) -> list[float] | None:
+    values = getattr(output, "log_probs", None)
+    if values is None:
+        if required:
+            raise RuntimeError(
+                "The rollout requested log probabilities, but the generation "
+                "server returned none."
+            )
+        return None
+    if len(values) != expected_length:
+        raise RuntimeError(
+            "Generation token/log-prob length mismatch: "
+            f"{expected_length} tokens versus {len(values)} log probabilities."
+        )
+    return [float(value) for value in values]
+
+
 def _apply_chat_template_no_thinking(tokenizer: Any, messages: list[dict[str, str]]) -> list[int]:
     kwargs: dict[str, Any] = {
         "add_generation_prompt": True,
@@ -503,6 +525,11 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         elapsed = time.monotonic() - started
         response_ids = list(output.token_ids)
         raw_response_length = len(response_ids)
+        response_logprobs = _generation_log_probs(
+            output,
+            expected_length=raw_response_length,
+            required=bool(sampling_params.get("logprobs", False)),
+        )
         cap_hit = max_response_length > 0 and raw_response_length >= max_response_length
         raw_assistant_text = self.tokenizer.decode(
             response_ids,
@@ -557,6 +584,8 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             response_mask,
             max_response_length=max_response_length,
         )
+        if response_logprobs is not None:
+            response_logprobs = response_logprobs[: len(response_ids)]
         mask_truncated = _config_bool(
             agent_config,
             "mask_truncated",
@@ -568,6 +597,8 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         if not response_ids:
             response_ids = [self.tokenizer.eos_token_id]
             response_mask = [0]
+            if response_logprobs is not None:
+                response_logprobs = [0.0]
 
         reward_payload = {
             "status": consequence.status.value,
@@ -604,10 +635,29 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         if thinking_text:
             transcript[0]["thinking"] = thinking_text
 
+        reward_extra_info = {
+            **metrics,
+            # TransferQueue consistently preserves reward_extra_info across veRL
+            # versions. Keep scalar JSON copies because TensorDict conversion
+            # can drop nested mappings in some veRL/TransferQueue versions.
+            "cd_reward_payload": reward_payload,
+            "cd_eval_payload": eval_payload,
+            "cd_reward_payload_json": json.dumps(
+                reward_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "cd_eval_payload_json": json.dumps(
+                eval_payload,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        }
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids,
             response_mask=response_mask,
+            response_logprobs=response_logprobs,
             reward_score=reward_score,
             num_turns=1,
             metrics=AgentLoopMetrics(
@@ -619,7 +669,7 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             extra_fields={
                 "min_global_steps": 0,
                 "max_global_steps": 0,
-                "reward_extra_info": metrics,
+                "reward_extra_info": reward_extra_info,
                 "cd_reward_payload": reward_payload,
                 "cd_eval_payload": eval_payload,
                 "transcript": transcript,

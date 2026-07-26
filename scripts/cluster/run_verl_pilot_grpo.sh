@@ -25,19 +25,10 @@ if [[ "${PREPARE_DATASETS:-1}" == "1" ]]; then
 fi
 
 if [[ "${CML_GENERATE_DATASET_IF_MISSING:-0}" == "1" ]]; then
-  missing_cml_file=0
-  for cml_file in "${TRAIN_FILE:-}" "${VAL_FILE:-}"; do
-    case "$cml_file" in
-      data/causal_micro_lab/*|*/data/causal_micro_lab/*)
-        if [[ ! -f "$cml_file" ]]; then
-          missing_cml_file=1
-        fi
-        ;;
-    esac
-  done
-  if [[ "$missing_cml_file" == "1" || "${CML_REBUILD_DATASET:-0}" == "1" ]]; then
-    scripts/cluster/prepare_causal_micro_lab_dataset.sh
-  fi
+  # The preparation script validates the manifest as well as file existence.
+  # Always invoke it so changed reward/agent settings cannot silently reuse
+  # stale frozen rows; matching datasets return immediately.
+  scripts/cluster/prepare_causal_micro_lab_dataset.sh
 fi
 
 # shellcheck disable=SC1091

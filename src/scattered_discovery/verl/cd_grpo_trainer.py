@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import json
 import math
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,63 @@ from scattered_discovery.envs.causal_micro_lab.consequence_reward import (
 )
 
 ARCHIVE_FILENAME = "cd_grpo_archive.json"
+CD_PAYLOAD_KEYS = {
+    "cd_reward_payload",
+    "cd_eval_payload",
+    "cd_reward_payload_json",
+    "cd_eval_payload_json",
+}
+
+try:
+    from verl.trainer.ppo.v1.agent_loop_tq import (
+        AgentLoopManagerTQ as _AgentLoopManagerTQ,
+        AgentLoopWorkerTQ as _AgentLoopWorkerTQ,
+    )
+except ImportError:  # Keep local verifier/tests importable without veRL.
+    _AgentLoopManagerTQ = None
+    _AgentLoopWorkerTQ = None
+
+
+if _AgentLoopWorkerTQ is not None and _AgentLoopManagerTQ is not None:
+    import ray
+
+    @ray.remote
+    class CDGRPOAgentLoopWorkerTQ(
+        _AgentLoopWorkerTQ.__ray_metadata__.modified_class
+    ):
+        async def _agent_loop_postprocess(
+            self,
+            output: Any,
+            validate: bool,
+            **kwargs: Any,
+        ) -> None:
+            # veRL's TQ adapter calls field.update(kwargs), and RLHFDataset
+            # supplies an input extra_fields value. Remove that collision and
+            # merge the input metadata explicitly so generated CD payloads
+            # survive serialization.
+            input_extra_fields = kwargs.pop("extra_fields", None)
+            if isinstance(input_extra_fields, dict):
+                merged = dict(input_extra_fields)
+                merged.update(output.extra_fields)
+                output.extra_fields = merged
+            return await super()._agent_loop_postprocess(
+                output,
+                validate,
+                **kwargs,
+            )
+
+
+    class CDGRPOAgentLoopManagerTQ(_AgentLoopManagerTQ):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self.agent_loop_workers_class = CDGRPOAgentLoopWorkerTQ
+
+else:
+
+    class CDGRPOAgentLoopManagerTQ:
+        @classmethod
+        def create(cls, *_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("CDGRPOAgentLoopManagerTQ requires veRL.")
 
 
 def _config_value(config: Any, key: str, default: Any) -> Any:
@@ -48,6 +106,165 @@ def _population_std(values: list[float]) -> float:
         return 0.0
     mean = _mean(values)
     return math.sqrt(sum((value - mean) ** 2 for value in values) / len(values))
+
+
+def scatter_real_rows(
+    template: Any,
+    real_index_tensor: Any,
+    real_values: Any,
+) -> Any:
+    """Scatter real-row values without inheriting an integer mask dtype."""
+    output = real_values.new_zeros(template.shape)
+    output.index_copy_(0, real_index_tensor, real_values)
+    return output
+
+
+def sanitize_validation_reward_extras(
+    reward_extra_infos: dict[str, list[Any]],
+) -> tuple[dict[str, list[Any]], dict[str, float]]:
+    """Exclude incomplete auxiliary series before veRL's numeric aggregation."""
+    sanitized: dict[str, list[Any]] = {}
+    missing_rates: dict[str, float] = {}
+    for key, values in reward_extra_infos.items():
+        if key in CD_PAYLOAD_KEYS:
+            continue
+        missing = sum(value is None for value in values)
+        if not missing:
+            sanitized[key] = values
+            continue
+        if key == "reward":
+            raise ValueError("validation reward series contains missing values")
+        missing_rates[key] = missing / max(1, len(values))
+    return sanitized, missing_rates
+
+
+def _decode_cd_payload(
+    value: Any,
+    *,
+    field_name: str,
+    index: int,
+) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    if not isinstance(value, str):
+        raise TypeError(
+            f"{field_name} at rollout index {index} must be a mapping or JSON string"
+        )
+    try:
+        decoded = json.loads(value)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"{field_name} at rollout index {index} is invalid JSON"
+        ) from error
+    if not isinstance(decoded, dict):
+        raise ValueError(
+            f"{field_name} at rollout index {index} must decode to an object"
+        )
+    return decoded
+
+
+def _payload_from_sources(
+    item: dict[str, Any],
+    reward_extra_info: dict[str, Any],
+    *,
+    field_name: str,
+    index: int,
+) -> dict[str, Any] | None:
+    value = item.get(field_name)
+    if value is None:
+        value = reward_extra_info.get(field_name)
+    if value is not None:
+        return _decode_cd_payload(
+            value,
+            field_name=field_name,
+            index=index,
+        )
+
+    json_field = f"{field_name}_json"
+    value = item.get(json_field)
+    if value is None:
+        value = reward_extra_info.get(json_field)
+    return _decode_cd_payload(
+        value,
+        field_name=json_field,
+        index=index,
+    )
+
+
+def select_cd_payloads(
+    extra_fields: list[dict[str, Any]],
+    tags: list[dict[str, Any]],
+) -> tuple[list[int], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Select real rollout payloads while excluding veRL's synthetic padding."""
+    if len(extra_fields) != len(tags):
+        raise ValueError("extra_fields and tags must have equal length")
+
+    real_indices: list[int] = []
+    payloads: list[dict[str, Any]] = []
+    eval_payloads: list[dict[str, Any]] = []
+    for index, (item, tag) in enumerate(zip(extra_fields, tags, strict=True)):
+        if bool(tag.get("is_padding", False)):
+            continue
+        reward_extra_info = item.get("reward_extra_info", {})
+        if not isinstance(reward_extra_info, dict):
+            reward_extra_info = {}
+        payload = _payload_from_sources(
+            item,
+            reward_extra_info,
+            field_name="cd_reward_payload",
+            index=index,
+        )
+        if payload is None:
+            diagnostic_keys = {
+                "validity",
+                "parse_valid",
+                "response_length_cap_hit",
+            }
+            if diagnostic_keys.isdisjoint(reward_extra_info):
+                raise KeyError(
+                    f"real rollout at index {index} has no cd_reward_payload"
+                )
+            if float(reward_extra_info.get("validity", 0.0)) > 0.0:
+                raise KeyError(
+                    f"valid rollout at index {index} has no cd_reward_payload"
+                )
+            if float(reward_extra_info.get("response_length_cap_hit", 0.0)) > 0.0:
+                status = CandidateStatus.TRUNCATED.value
+            elif float(reward_extra_info.get("parse_valid", 0.0)) <= 0.0:
+                status = CandidateStatus.PARSE_FAIL.value
+            else:
+                status = CandidateStatus.INVALID.value
+            payload = {
+                "status": status,
+                "state_id": f"nonvalid-rollout-{index}",
+                "consequence_signature": None,
+                "behavior_key": None,
+            }
+        eval_payload = _payload_from_sources(
+            item,
+            reward_extra_info,
+            field_name="cd_eval_payload",
+            index=index,
+        )
+        if eval_payload is None:
+            eval_payload = {
+                "valid_mode_count": int(
+                    reward_extra_info.get("valid_mode_count", 0)
+                ),
+                "separation_bucket": "unknown",
+                "family_bucket": "unknown",
+            }
+        real_indices.append(index)
+        payloads.append(payload)
+        eval_payloads.append(eval_payload or {})
+
+    if not real_indices:
+        raise ValueError("CD-GRPO batch contains no real rollouts")
+    return real_indices, payloads, eval_payloads
 
 
 def _pairwise_distances(signatures: list[str]) -> list[float]:
@@ -379,8 +596,30 @@ class CDGRPOTrainerMixin:
         self.cd_grpo_archive.save(path)
         return result
 
+    def _val_metrics_update(
+        self,
+        data_sources: list[Any],
+        sample_uids: list[Any],
+        reward_extra_infos_dict: dict[str, list[Any]],
+        sample_turns: list[Any],
+    ) -> dict[str, float]:
+        sanitized, missing_rates = sanitize_validation_reward_extras(
+            reward_extra_infos_dict
+        )
+        metrics = super()._val_metrics_update(
+            data_sources,
+            sample_uids,
+            sanitized,
+            sample_turns,
+        )
+        for key, rate in missing_rates.items():
+            safe_key = key.replace("/", "_")
+            metrics[f"val-aux/cd_grpo/missing_reward_extra/{safe_key}"] = rate
+        return metrics
+
     def _compute_advantage(self, batch: Any, metrics: dict[str, Any]) -> Any:
         import numpy as np
+        import torch
         from tensordict import TensorDict
         import transfer_queue as tq
         from verl.protocol import DataProto
@@ -407,8 +646,11 @@ class CDGRPOTrainerMixin:
         )
         response_mask_nested = raw["response_mask"]
         extra_fields = raw.pop("extra_fields").tolist()
-        payloads = [item["cd_reward_payload"] for item in extra_fields]
-        eval_payloads = [item.get("cd_eval_payload", {}) for item in extra_fields]
+        tags = list(batch.tags)
+        real_indices, payloads, eval_payloads = select_cd_payloads(
+            extra_fields,
+            tags,
+        )
         data = DataProto(batch=raw.to_padded_tensor())
         data.batch["token_level_scores"] = data.batch["rm_scores"]
         uid = np.array(data.batch.pop("uid").tolist(), dtype=object)
@@ -444,18 +686,47 @@ class CDGRPOTrainerMixin:
             )
             metrics.update(correction_metrics)
 
-        advantages, returns, cd_metrics = compute_cd_grpo_advantages(
-            token_level_rewards=data.batch["token_level_rewards"],
-            response_mask=data.batch["response_mask"],
-            index=uid.tolist(),
+        real_index_tensor = data.batch["response_mask"].new_tensor(
+            real_indices,
+            dtype=torch.long,
+        )
+        real_advantages, real_returns, cd_metrics = compute_cd_grpo_advantages(
+            token_level_rewards=data.batch["token_level_rewards"].index_select(
+                0,
+                real_index_tensor,
+            ),
+            response_mask=data.batch["response_mask"].index_select(
+                0,
+                real_index_tensor,
+            ),
+            index=uid[real_indices].tolist(),
             payloads=payloads,
             eval_payloads=eval_payloads,
             config=self._cd_config(),
             archive=self.cd_grpo_archive,
         )
+        advantages = scatter_real_rows(
+            data.batch["response_mask"],
+            real_index_tensor,
+            real_advantages,
+        )
+        returns = scatter_real_rows(
+            data.batch["response_mask"],
+            real_index_tensor,
+            real_returns,
+        )
         data.batch["advantages"] = advantages
         data.batch["returns"] = returns
         metrics.update(cd_metrics)
+        metrics.update(
+            {
+                "cd_grpo/batch_rows": float(len(tags)),
+                "cd_grpo/real_rows": float(len(real_indices)),
+                "cd_grpo/padding_rows": float(len(tags) - len(real_indices)),
+                "cd_grpo/padding_rate": (len(tags) - len(real_indices))
+                / max(1, len(tags)),
+            }
+        )
 
         output_fields = ["advantages", "returns"]
         if self.config.algorithm.use_kl_in_reward:

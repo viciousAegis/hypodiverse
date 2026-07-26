@@ -76,6 +76,7 @@ required = [
     "pandas",
     "pyarrow",
     "datasets",
+    "transfer_queue",
     "wandb",
     "verl",
     "torch",

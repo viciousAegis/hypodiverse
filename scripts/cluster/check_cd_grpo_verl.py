@@ -33,8 +33,21 @@ def main() -> None:
     )
     if "extra_fields" not in model_fields:
         failures.append("AgentLoopOutput.extra_fields is missing")
+    output_source = inspect.getsource(AgentLoopOutput.as_dict)
+    if (
+        'output["rollout_log_probs"]' not in output_source
+        or 'output.pop("response_logprobs"' not in output_source
+    ):
+        failures.append(
+            "AgentLoopOutput no longer maps response_logprobs to rollout_log_probs"
+        )
     if not hasattr(PPOTrainer, "_compute_advantage"):
         failures.append("veRL v1 PPOTrainer._compute_advantage is missing")
+    agent_source = inspect.getsource(CDGRPOAgentLoop.run)
+    if "response_logprobs=response_logprobs" not in agent_source:
+        failures.append(
+            "CDGRPOAgentLoop does not propagate generation log probabilities"
+        )
     source = inspect.getsource(PPOTrainer._compute_advantage)
     for required in ("rm_scores", "response_mask", "kv_batch_get"):
         if required not in source:
