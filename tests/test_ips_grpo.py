@@ -19,6 +19,7 @@ from scattered_discovery.verl.ips_grpo_trainer import (
     IPS_REWARD_EXTRA_DEFAULTS,
     compute_ips_grpo_advantages,
     compute_latent_ips_grpo_advantages,
+    finish_trainer_wandb,
     normalize_ips_reward_extra_info,
     sanitize_validation_reward_extras,
     select_ips_metadata,
@@ -56,6 +57,28 @@ class IPSGRPOTests(unittest.TestCase):
         self.assertEqual(set(failure), set(IPS_REWARD_EXTRA_DEFAULTS))
         self.assertEqual(failure["reward_syntax_valid"], 0.0)
         self.assertEqual(failure["ips_behavior_hash_hi"], -1.0)
+
+    def test_wandb_is_finished_once_before_task_runner_teardown(self):
+        calls = []
+
+        class Backend:
+            def finish(self, *, exit_code):
+                calls.append(exit_code)
+
+        class Tracking:
+            def __init__(self):
+                self.logger = {"wandb": Backend(), "console": object()}
+
+        class Trainer:
+            def __init__(self):
+                self.logger = Tracking()
+
+        trainer = Trainer()
+        finish_trainer_wandb(trainer, exit_code=0)
+        finish_trainer_wandb(trainer, exit_code=1)
+
+        self.assertEqual(calls, [0])
+        self.assertNotIn("wandb", trainer.logger.logger)
 
     def test_behavior_hash_is_stable_and_distinguishes_outcomes(self):
         self.assertEqual(_behavior_hash_parts("mode-a"), _behavior_hash_parts("mode-a"))

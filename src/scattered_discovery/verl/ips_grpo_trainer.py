@@ -51,6 +51,17 @@ def normalize_ips_reward_extra_info(
     return {key: float(source.get(key, default)) for key, default in defaults.items()}
 
 
+def finish_trainer_wandb(trainer: Any, *, exit_code: int) -> None:
+    """Flush W&B before Ray tears down the task-runner process."""
+    tracking = getattr(trainer, "logger", None)
+    backends = getattr(tracking, "logger", None)
+    if not isinstance(backends, dict):
+        return
+    wandb_backend = backends.pop("wandb", None)
+    if wandb_backend is not None:
+        wandb_backend.finish(exit_code=exit_code)
+
+
 try:
     from verl.experimental.agent_loop.agent_loop import (
         AgentLoopManager as _AgentLoopManager,
@@ -1093,12 +1104,19 @@ def build_ips_task_runner() -> Any:
             config.transfer_queue.enable = True
             self.config = config
             tq.init(config.transfer_queue)
+            exit_code = 0
             try:
                 self.trainer = trainer_cls(config=config)
                 self.trainer.init()
                 self.init_agent_loop_manager()
                 self.trainer.fit(self.agent_loop_manager)
+            except BaseException:
+                exit_code = 1
+                raise
             finally:
-                tq.close()
+                try:
+                    finish_trainer_wandb(self.trainer, exit_code=exit_code)
+                finally:
+                    tq.close()
 
     return IPSGRPOTaskRunner
