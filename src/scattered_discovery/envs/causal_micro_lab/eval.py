@@ -18,10 +18,18 @@ from scattered_discovery.backends import (
     OllamaBackend,
     OpenAICompatibleBackend,
 )
-from scattered_discovery.envs.causal_micro_lab.parser import parse_record_state
+from scattered_discovery.envs.causal_micro_lab.parser import (
+    HypothesisParseError,
+    parse_hypothesis,
+    parse_record_state,
+)
 from scattered_discovery.envs.causal_micro_lab.prompt_builder import build_prompt
 from scattered_discovery.envs.causal_micro_lab.rewards import group_metrics
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
+from scattered_discovery.envs.causal_micro_lab.symmetry import (
+    PromptSymmetry,
+    symmetry_schedule,
+)
 from scattered_discovery.envs.causal_micro_lab.verifier import (
     SetVerificationResult,
     VerificationResult,
@@ -85,6 +93,8 @@ def _maybe_start_wandb(args: argparse.Namespace):
             "thinking_fallback": args.thinking_fallback,
             "fallback_num_predict": args.fallback_num_predict,
             "fallback_temperature": args.fallback_temperature,
+            "symmetry_stratified": args.symmetry_stratified,
+            "symmetry_seed": args.symmetry_seed,
         },
     )
 
@@ -552,26 +562,58 @@ def evaluate_states(
     thinking_fallback: bool = False,
     fallback_num_predict: int = 256,
     fallback_temperature: float = 0.0,
+    symmetry_stratified: bool = False,
+    symmetry_seed: int = 1,
 ) -> list[dict[str, Any]]:
     jobs = []
     for state_index, state in enumerate(states):
-        prompt = build_prompt(
-            state,
-            output_mode=output_mode,
-            answer_count=answer_count,
+        transforms = (
+            symmetry_schedule(
+                state_id=state.state_id,
+                evidence_count=state.evidence_size,
+                group_size=rollouts_per_state,
+                seed=symmetry_seed,
+            )
+            if symmetry_stratified
+            else (PromptSymmetry(),) * rollouts_per_state
         )
-        messages = [
-            ChatMessage(
-                role="system",
-                content="You are solving a single-shot scientific hypothesis task.",
-            ),
-            ChatMessage(role="user", content=prompt),
-        ]
         for rollout_index in range(rollouts_per_state):
-            jobs.append((state_index, state, rollout_index, prompt, messages))
+            transform = transforms[rollout_index]
+            prompt = build_prompt(
+                state,
+                output_mode=output_mode,
+                answer_count=answer_count,
+                symmetry=transform,
+            )
+            messages = [
+                ChatMessage(
+                    role="system",
+                    content="You are solving a single-shot scientific hypothesis task.",
+                ),
+                ChatMessage(role="user", content=prompt),
+            ]
+            jobs.append(
+                (
+                    state_index,
+                    state,
+                    rollout_index,
+                    prompt,
+                    messages,
+                    transform,
+                )
+            )
 
-    def run_job(job: tuple[int, EvidenceState, int, str, list[ChatMessage]]) -> dict[str, Any]:
-        state_index, state, rollout_index, prompt, messages = job
+    def run_job(
+        job: tuple[
+            int,
+            EvidenceState,
+            int,
+            str,
+            list[ChatMessage],
+            PromptSymmetry,
+        ]
+    ) -> dict[str, Any]:
+        state_index, state, rollout_index, prompt, messages, transform = job
         started = time.monotonic()
         elapsed = time.monotonic() - started
         sample_id = f"{state.state_id}:sample{rollout_index:04d}"
@@ -635,6 +677,16 @@ def evaluate_states(
                 elapsed = initial_elapsed + fallback_seconds
             else:
                 elapsed = initial_elapsed
+            canonical_output = output
+            if symmetry_stratified and output_mode == "single":
+                try:
+                    transformed_hypothesis = parse_hypothesis(output)
+                    canonical_output = transform.inverse_hypothesis(
+                        transformed_hypothesis
+                    ).render_flat_rules()
+                except HypothesisParseError:
+                    # Preserve the original parser error in verification.
+                    pass
             if output_mode == "multi_answer_rlvr":
                 verification = _set_verification_to_eval_dict(
                     verify_output_set(
@@ -645,11 +697,12 @@ def evaluate_states(
                     state,
                 )
             else:
-                verification = verify_output(output, state).as_dict()
+                verification = verify_output(canonical_output, state).as_dict()
             request_error = None
         except Exception as exc:  # noqa: BLE001
             elapsed = time.monotonic() - started
             output = ""
+            canonical_output = ""
             thinking = ""
             request_error = f"{type(exc).__name__}: {exc}"
             verification = {
@@ -690,6 +743,9 @@ def evaluate_states(
             "model": model,
             "model_seconds": elapsed,
             "output": output,
+            "canonical_output": canonical_output,
+            "symmetry_stratified": symmetry_stratified,
+            "symmetry_transform_id": transform.transform_id,
             "thinking": thinking,
             "request_error": request_error,
             "initial_finish_reason": initial_finish_reason,
@@ -888,6 +944,8 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             thinking_fallback=args.thinking_fallback,
             fallback_num_predict=args.fallback_num_predict,
             fallback_temperature=args.fallback_temperature,
+            symmetry_stratified=args.symmetry_stratified,
+            symmetry_seed=args.symmetry_seed,
         )
 
     with episodes_path.open("w", encoding="utf-8") as handle:
@@ -999,6 +1057,15 @@ def main() -> None:
     )
     parser.add_argument("--fallback-num-predict", type=int, default=256)
     parser.add_argument("--fallback-temperature", type=float, default=0.0)
+    parser.add_argument(
+        "--symmetry-stratified",
+        action="store_true",
+        help=(
+            "Allocate rollouts across exact prompt symmetries and canonicalize "
+            "generated programs before verification."
+        ),
+    )
+    parser.add_argument("--symmetry-seed", type=int, default=1)
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-run-name")
     args = parser.parse_args()

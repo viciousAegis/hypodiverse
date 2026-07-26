@@ -13,6 +13,97 @@ IPS_METADATA_KEYS = {
     "cd_eval_payload_json",
 }
 
+IPS_REWARD_EXTRA_DEFAULTS = {
+    "terminal_reward": 0.0,
+    "base_terminal_reward": 0.0,
+    "validity": 0.0,
+    "parse_valid": 0.0,
+    "evidence_consistent": 0.0,
+    "response_length_raw": 0.0,
+    "response_length_cap_hit": 0.0,
+    "response_length_loss_masked": 0.0,
+    "reward_length_cap": 0.0,
+    "reward_syntax_valid": 0.0,
+    "reward_valid_hypothesis": 0.0,
+    "cd_probe_count": 0.0,
+    "ips_behavior_hash_hi": -1.0,
+    "ips_behavior_hash_lo": -1.0,
+    "valid_mode_count": 0.0,
+}
+
+
+def normalize_ips_reward_extra_info(
+    value: Any,
+    *,
+    reward_score: Any = 0.0,
+) -> dict[str, float]:
+    """Return the fixed scalar schema required by veRL batch postprocessing."""
+    source = value if isinstance(value, dict) else {}
+    defaults = dict(IPS_REWARD_EXTRA_DEFAULTS)
+    defaults["terminal_reward"] = float(reward_score or 0.0)
+    defaults["base_terminal_reward"] = float(reward_score or 0.0)
+    return {
+        key: float(source.get(key, default))
+        for key, default in defaults.items()
+    }
+
+
+try:
+    from verl.trainer.ppo.v1.agent_loop_tq import (
+        AgentLoopManagerTQ as _AgentLoopManagerTQ,
+        AgentLoopWorkerTQ as _AgentLoopWorkerTQ,
+    )
+except ImportError:  # Keep local tests importable without veRL.
+    _AgentLoopManagerTQ = None
+    _AgentLoopWorkerTQ = None
+
+
+if _AgentLoopWorkerTQ is not None and _AgentLoopManagerTQ is not None:
+    import ray
+
+    @ray.remote
+    class IPSGRPOAgentLoopWorkerTQ(
+        _AgentLoopWorkerTQ.__ray_metadata__.modified_class
+    ):
+        async def _agent_loop_postprocess(
+            self,
+            output: Any,
+            validate: bool,
+            **kwargs: Any,
+        ) -> None:
+            input_extra_fields = kwargs.pop("extra_fields", None)
+            if isinstance(input_extra_fields, dict):
+                merged = dict(input_extra_fields)
+                merged.update(output.extra_fields)
+                output.extra_fields = merged
+            # veRL derives the batch schema from the first rollout and indexes
+            # every later rollout with those keys. Normalize failure/padding
+            # paths before that unguarded batch assembly.
+            output.extra_fields["reward_extra_info"] = (
+                normalize_ips_reward_extra_info(
+                    output.extra_fields.get("reward_extra_info"),
+                    reward_score=getattr(output, "reward_score", 0.0),
+                )
+            )
+            return await super()._agent_loop_postprocess(
+                output,
+                validate,
+                **kwargs,
+            )
+
+
+    class IPSGRPOAgentLoopManagerTQ(_AgentLoopManagerTQ):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self.agent_loop_workers_class = IPSGRPOAgentLoopWorkerTQ
+
+else:
+
+    class IPSGRPOAgentLoopManagerTQ:
+        @classmethod
+        def create(cls, *_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("IPSGRPOAgentLoopManagerTQ requires veRL.")
+
 
 def _config_value(config: Any, key: str, default: Any) -> Any:
     if config is None:
@@ -399,9 +490,7 @@ def build_ips_task_runner() -> Any:
             self.agent_loop_manager = None
 
         def init_agent_loop_manager(self) -> None:
-            from verl.trainer.ppo.v1 import AgentLoopManagerTQ
-
-            self.agent_loop_manager = AgentLoopManagerTQ.create(
+            self.agent_loop_manager = IPSGRPOAgentLoopManagerTQ.create(
                 config=self.config,
                 llm_client=self.trainer.get_llm_client(),
                 teacher_client=self.trainer.get_teacher_client(),

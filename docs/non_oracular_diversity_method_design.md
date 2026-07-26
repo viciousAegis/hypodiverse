@@ -1,6 +1,10 @@
 # Non-Oracle Diversity Method Design
 
-Status: research design, not an implementation specification.
+Status: superseded research exploration. The current method candidate is
+documented in
+[`symmetry_stratified_ips_method.md`](symmetry_stratified_ips_method.md).
+The rejected finite-budget set-reward candidate remains documented in
+[`budgeted_mode_coverage_method_audit.md`](budgeted_mode_coverage_method_audit.md).
 
 This document separates the problem into claims that can be supported by the
 available training signal. It records rejected ideas as well as the one current
@@ -276,4 +280,3 @@ rescued with private feasibility information or additional desired outcomes.
 - [ROSE: Semantically Diverse Exploration](https://arxiv.org/abs/2601.05053)
 - [REFT: First-Token Diversification](https://arxiv.org/abs/2605.28295)
 - [Stochastic Beams and Gumbel-Top-k Sampling](https://arxiv.org/abs/1903.06059)
-

@@ -716,4 +716,12 @@ class IPSGRPOAgentLoop(CDGRPOAgentLoop):  # type: ignore[misc]
         ):
             reward_extra_info.pop(key, None)
             output.extra_fields.pop(key, None)
+        from scattered_discovery.verl.ips_grpo_trainer import (
+            normalize_ips_reward_extra_info,
+        )
+
+        output.extra_fields["reward_extra_info"] = normalize_ips_reward_extra_info(
+            reward_extra_info,
+            reward_score=output.reward_score,
+        )
         return output

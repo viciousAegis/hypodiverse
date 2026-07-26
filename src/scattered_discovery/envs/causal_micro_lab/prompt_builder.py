@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
+from scattered_discovery.envs.causal_micro_lab.symmetry import PromptSymmetry
 
 
 def build_prompt(
@@ -10,7 +11,9 @@ def build_prompt(
     *,
     output_mode: Literal["single", "multi_answer_rlvr"] = "single",
     answer_count: int = 1,
+    symmetry: PromptSymmetry | None = None,
 ) -> str:
+    transform = symmetry or PromptSymmetry()
     lines = [
         "Infer one Boolean causal program consistent with the evidence.",
         "",
@@ -29,8 +32,10 @@ def build_prompt(
     from scattered_discovery.envs.causal_micro_lab.signatures import build_mode_table
 
     table = build_mode_table()
-    for index, item in enumerate(state.evidence, start=1):
+    evidence = transform.order_evidence(state.evidence)
+    for index, item in enumerate(evidence, start=1):
         experiment = table.experiments[item.experiment_id]
+        inputs = transform.transform_inputs(experiment.inputs)
         intervention = experiment.intervention
         if intervention == "OBSERVE":
             intervention_text = "none"
@@ -41,7 +46,7 @@ def build_prompt(
         lines.extend(
             [
                 f"Experiment {index}:",
-                f"  inputs: X1={experiment.inputs[0]}, X2={experiment.inputs[1]}, X3={experiment.inputs[2]}",
+                f"  inputs: X1={inputs[0]}, X2={inputs[1]}, X3={inputs[2]}",
                 f"  intervention: {intervention_text}",
                 f"  observed: Z1={item.outcome[0]}, Z2={item.outcome[1]}, Y={item.outcome[2]}",
                 "",

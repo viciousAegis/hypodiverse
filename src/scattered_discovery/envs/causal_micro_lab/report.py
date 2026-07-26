@@ -32,6 +32,29 @@ METRICS = (
     "generated_mode_separation",
     "generated_to_available_separation",
 )
+CONDITIONAL_METRICS = (
+    ("modes_recovered_given_success", "num_unique_valid_modes"),
+    ("fraction_modes_recovered_given_success", "exact_coverage"),
+    (
+        "budget_normalized_coverage_given_success",
+        "budget_normalized_coverage",
+    ),
+    ("family_coverage_given_success", "family_coverage"),
+    ("effective_mode_count_given_success", "effective_mode_count"),
+    ("mode_entropy_given_success", "mode_entropy"),
+    ("dominant_mode_mass_given_success", "dominant_mode_mass"),
+    ("duplicity_given_success", "duplicity"),
+    ("generated_mode_separation_given_success", "generated_mode_separation"),
+    (
+        "generated_to_available_separation_given_success",
+        "generated_to_available_separation",
+    ),
+)
+PRIMARY_METRICS = (
+    "pass_at_k",
+    "modes_recovered_given_success",
+    "fraction_modes_recovered_given_success",
+)
 
 
 def _mean(items: list[float]) -> float:
@@ -136,6 +159,93 @@ def _aggregate_rows(
     return output
 
 
+def _aggregate_primary_rows(
+    rows: list[dict[str, Any]],
+    group_keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[tuple(row[key] for key in group_keys)].append(row)
+    output = []
+    for labels, items in sorted(grouped.items(), key=lambda item: item[0]):
+        successes = [item for item in items if float(item["pass_at_k"]) > 0]
+        result = {key: value for key, value in zip(group_keys, labels, strict=True)}
+        result.update(
+            {
+                "support_states": len(items),
+                "successful_states": len(successes),
+                "pass_at_k": _mean([float(item["pass_at_k"]) for item in items]),
+                "modes_recovered_given_success": _mean(
+                    [float(item["num_unique_valid_modes"]) for item in successes]
+                ),
+                "fraction_modes_recovered_given_success": _mean(
+                    [float(item["exact_coverage"]) for item in successes]
+                ),
+            }
+        )
+        output.append(result)
+    return output
+
+
+def _bootstrap_grouped_rows(
+    rows: list[dict[str, Any]],
+    *,
+    slice_name: str,
+    group_keys: tuple[str, ...],
+    samples: int,
+    rng: random.Random,
+) -> list[dict[str, Any]]:
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[tuple(row[key] for key in group_keys)].append(row)
+    output = []
+    for labels, items in sorted(grouped.items(), key=lambda item: item[0]):
+        successes = [item for item in items if float(item["pass_at_k"]) > 0]
+        metric_specs = [
+            (metric, metric, "all_states", items) for metric in METRICS
+        ]
+        metric_specs.extend(
+            (
+                output_metric,
+                source_metric,
+                "successful_states",
+                successes,
+            )
+            for output_metric, source_metric in CONDITIONAL_METRICS
+        )
+        for output_metric, source_metric, conditioning, source_items in metric_specs:
+            if not source_items:
+                continue
+            values = [float(item[source_metric]) for item in source_items]
+            estimates = [
+                _mean(
+                    [
+                        values[rng.randrange(len(values))]
+                        for _ in range(len(values))
+                    ]
+                )
+                for _ in range(samples)
+            ]
+            estimates.sort()
+            result = {
+                "slice": slice_name,
+                **{
+                    key: value
+                    for key, value in zip(group_keys, labels, strict=True)
+                },
+                "metric": output_metric,
+                "conditioning": conditioning,
+                "support_states": len(items),
+                "successful_states": len(successes),
+                "mean": _mean(values),
+                "ci95_low": estimates[int(0.025 * (samples - 1))],
+                "ci95_high": estimates[int(0.975 * (samples - 1))],
+                "bootstrap_samples": samples,
+            }
+            output.append(result)
+    return output
+
+
 def _bootstrap_rows(
     rows: list[dict[str, Any]],
     *,
@@ -143,31 +253,39 @@ def _bootstrap_rows(
     seed: int = 20260726,
 ) -> list[dict[str, Any]]:
     rng = random.Random(seed)
-    grouped: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
-    for row in rows:
-        grouped[(int(row["K"]), int(row["M"]))].append(row)
-    output = []
-    for (k, m), items in sorted(grouped.items()):
-        for metric in METRICS:
-            values = [float(item[metric]) for item in items]
-            estimates = []
-            for _ in range(samples):
-                estimates.append(
-                    _mean([values[rng.randrange(len(values))] for _ in values])
-                )
-            estimates.sort()
-            output.append(
-                {
-                    "K": k,
-                    "M": m,
-                    "metric": metric,
-                    "support_states": len(values),
-                    "mean": _mean(values),
-                    "ci95_low": estimates[int(0.025 * (samples - 1))],
-                    "ci95_high": estimates[int(0.975 * (samples - 1))],
-                }
-            )
-    return output
+    slices = (
+        ("by_k", ("K",)),
+        ("by_k_m", ("K", "M")),
+        ("by_k_separation", ("K", "separation_bucket")),
+        (
+            "by_k_m_separation",
+            ("K", "M", "separation_bucket"),
+        ),
+        ("by_k_family", ("K", "family_bucket")),
+    )
+    return [
+        result
+        for slice_name, group_keys in slices
+        for result in _bootstrap_grouped_rows(
+            rows,
+            slice_name=slice_name,
+            group_keys=group_keys,
+            samples=samples,
+            rng=rng,
+        )
+    ]
+
+
+def _primary_bootstrap_rows(
+    bootstrap_rows: list[dict[str, Any]],
+    *,
+    slice_name: str,
+) -> list[dict[str, Any]]:
+    return [
+        row
+        for row in bootstrap_rows
+        if row["slice"] == slice_name and row["metric"] in PRIMARY_METRICS
+    ]
 
 
 def _mode_family_rows(reachability: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -270,6 +388,15 @@ def build_report(
         ("K", "M", "separation_bucket"),
     )
     by_k_family = _aggregate_rows(metric_rows, ("K", "family_bucket"))
+    primary_by_k_m = _aggregate_primary_rows(metric_rows, ("K", "M"))
+    primary_by_k_separation = _aggregate_primary_rows(
+        metric_rows,
+        ("K", "separation_bucket"),
+    )
+    primary_by_k_family = _aggregate_primary_rows(
+        metric_rows,
+        ("K", "family_bucket"),
+    )
     bootstrap_rows = _bootstrap_rows(
         metric_rows,
         samples=bootstrap_samples,
@@ -303,7 +430,37 @@ def build_report(
         by_k_m_separation,
     )
     _write_csv(output_dir / "metrics_by_k_family.csv", by_k_family)
+    _write_csv(
+        output_dir / "primary_metrics_by_k_m.csv",
+        primary_by_k_m,
+    )
+    _write_csv(
+        output_dir / "primary_metrics_by_k_separation.csv",
+        primary_by_k_separation,
+    )
+    _write_csv(
+        output_dir / "primary_metrics_by_k_family.csv",
+        primary_by_k_family,
+    )
     _write_csv(output_dir / "bootstrap_ci95.csv", bootstrap_rows)
+    _write_csv(
+        output_dir / "primary_bootstrap_ci95_by_k_m.csv",
+        _primary_bootstrap_rows(bootstrap_rows, slice_name="by_k_m"),
+    )
+    _write_csv(
+        output_dir / "primary_bootstrap_ci95_by_k_separation.csv",
+        _primary_bootstrap_rows(
+            bootstrap_rows,
+            slice_name="by_k_separation",
+        ),
+    )
+    _write_csv(
+        output_dir / "primary_bootstrap_ci95_by_k_family.csv",
+        _primary_bootstrap_rows(
+            bootstrap_rows,
+            slice_name="by_k_family",
+        ),
+    )
     _write_csv(output_dir / "mode_reachability.csv", reachability_rows)
     _write_csv(output_dir / "mode_discovery_by_family.csv", mode_family_rows)
     _write_csv(

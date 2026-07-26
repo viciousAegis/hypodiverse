@@ -10,7 +10,9 @@ except ImportError:
 
 from scattered_discovery.verl.agent_loop import _behavior_hash_parts
 from scattered_discovery.verl.ips_grpo_trainer import (
+    IPS_REWARD_EXTRA_DEFAULTS,
     compute_ips_grpo_advantages,
+    normalize_ips_reward_extra_info,
     sanitize_validation_reward_extras,
     select_ips_metadata,
 )
@@ -20,6 +22,24 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class IPSGRPOTests(unittest.TestCase):
+    def test_reward_extra_schema_is_fixed_across_success_and_failure_paths(self):
+        complete = normalize_ips_reward_extra_info(
+            {
+                "reward_syntax_valid": 0.2,
+                "validity": 1.0,
+                "reward_valid_hypothesis": 1.0,
+                "ips_behavior_hash_hi": 12,
+                "ips_behavior_hash_lo": 34,
+            },
+            reward_score=1.0,
+        )
+        failure = normalize_ips_reward_extra_info({}, reward_score=0.0)
+
+        self.assertEqual(set(complete), set(IPS_REWARD_EXTRA_DEFAULTS))
+        self.assertEqual(set(failure), set(IPS_REWARD_EXTRA_DEFAULTS))
+        self.assertEqual(failure["reward_syntax_valid"], 0.0)
+        self.assertEqual(failure["ips_behavior_hash_hi"], -1.0)
+
     def test_behavior_hash_is_stable_and_distinguishes_outcomes(self):
         self.assertEqual(_behavior_hash_parts("mode-a"), _behavior_hash_parts("mode-a"))
         self.assertNotEqual(

@@ -6,14 +6,29 @@ def main() -> None:
     import transfer_queue  # noqa: F401
     from scattered_discovery.verl.agent_loop import IPSGRPOAgentLoop
     from scattered_discovery.verl.ips_grpo_trainer import (
+        IPS_REWARD_EXTRA_DEFAULTS,
+        IPSGRPOAgentLoopManagerTQ,
         IPSGRPOTrainerMixin,
         build_ips_task_runner,
         compute_ips_grpo_advantages,
+        normalize_ips_reward_extra_info,
     )
 
     assert IPSGRPOAgentLoop is not None
     assert IPSGRPOTrainerMixin is not None
+    assert IPSGRPOAgentLoopManagerTQ is not None
     assert callable(build_ips_task_runner)
+    complete = normalize_ips_reward_extra_info(
+        {
+            "reward_syntax_valid": 0.2,
+            "validity": 0.0,
+            "ips_behavior_hash_hi": -1,
+            "ips_behavior_hash_lo": -1,
+        }
+    )
+    failure = normalize_ips_reward_extra_info({})
+    assert set(complete) == set(failure) == set(IPS_REWARD_EXTRA_DEFAULTS)
+    assert failure["reward_syntax_valid"] == 0.0
     advantages, _, metrics = compute_ips_grpo_advantages(
         token_level_rewards=torch.tensor([[1.0], [1.0], [1.0], [0.2]]),
         response_mask=torch.ones(4, 1),
