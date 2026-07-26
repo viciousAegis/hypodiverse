@@ -1,17 +1,18 @@
-# Frozen Boolean Causal Micro-Lab comparison eval.
-# One K=16 bank supplies deterministic K=4,8,12 prefixes.
+# Frozen K=16 evaluation for latent-conditioned methods.
+# MODEL_PATH is supplied positionally by the SLURM launcher.
 
 prepare_datasets: 0
 causal_micro_lab_generate_dataset_if_missing: 0
 
 model_id: Qwen/Qwen3-4B
-download_model: 1
+download_model: 0
 eval_file: eval_sets/causal_micro_lab/final_v1/verl_test.jsonl
 output_dir: artifacts/causal_micro_lab_final_eval
-run_name: causal_micro_lab_final_k16_qwen3_4b_base
+run_name: causal_micro_lab_final_k16_latent
 
 rollouts_per_spec: 16
 prefix_ks: 4,8,12,16
+latent_count: 8
 eval_workers: 128
 max_response_length: 6000
 temperature: 1.0

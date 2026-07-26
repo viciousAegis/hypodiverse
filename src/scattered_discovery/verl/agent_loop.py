@@ -12,6 +12,9 @@ from scattered_discovery.envs.causal_micro_lab.consequence_reward import (
     base_candidate_reward,
     evaluate_consequences,
 )
+from scattered_discovery.envs.causal_micro_lab.prompt_builder import (
+    build_latent_prompt,
+)
 from scattered_discovery.envs.factory import make_env
 from scattered_discovery.verl.qwen3_tokenization import observation_token_ids
 
@@ -65,6 +68,38 @@ def _behavior_hash_parts(behavior_key: str | None) -> tuple[int, int]:
         int.from_bytes(digest[:4], byteorder="big", signed=False),
         int.from_bytes(digest[4:8], byteorder="big", signed=False),
     )
+
+
+def latent_id_for_rollout(rollout_index: int, latent_count: int) -> int:
+    """Assign one-based latent IDs deterministically across a rollout group."""
+    if latent_count <= 0:
+        raise ValueError("latent_count must be positive")
+    if rollout_index < 0:
+        raise ValueError("rollout_index must be non-negative")
+    return rollout_index % latent_count + 1
+
+
+def negative_latent_id(
+    latent_id: int,
+    latent_count: int,
+    *,
+    offset: int = 1,
+) -> int:
+    """Choose a deterministic rotating counterfactual latent."""
+    if latent_count < 2:
+        raise ValueError("latent_count must be at least two")
+    if not 1 <= latent_id <= latent_count:
+        raise ValueError("latent_id is outside the configured latent range")
+    if offset <= 0 or offset >= latent_count:
+        raise ValueError("latent negative offset must be in [1, latent_count)")
+    return (latent_id - 1 + offset) % latent_count + 1
+
+
+def _answer_token_count(tokenizer: Any, answer_text: str, response_length: int) -> int:
+    if not answer_text or response_length <= 0:
+        return 0
+    token_ids = tokenizer.encode(answer_text, add_special_tokens=False)
+    return min(len(token_ids), response_length)
 
 
 def _truncate_response_budget(
@@ -521,9 +556,32 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         state_record = json.loads(_as_text(kwargs["state_json"]))
         task_config = env_spec.get("task") or {}
         agent_config = env_spec.get("agent") or {}
+        method_config = self.config.algorithm.get(
+            "cd_grpo",
+            self.config.algorithm.get("ips_grpo", {}),
+        )
         max_response_length = int(self.rollout_config.response_length)
         request_id = _as_text(kwargs.get("uid", uuid4().hex))
-        prompt = _as_text(kwargs.get("raw_prompt") or kwargs.get("prompt"))
+        rollout_index = int(kwargs.get("session_id", 0))
+        latent_enabled = bool(method_config.get("latent_enabled", False))
+        latent_count = int(method_config.get("latent_count", 8))
+        latent_negative_offset = int(method_config.get("latent_negative_offset", 1))
+        latent_id = (
+            latent_id_for_rollout(rollout_index, latent_count) if latent_enabled else 0
+        )
+        counterfactual_latent_id = (
+            negative_latent_id(
+                latent_id,
+                latent_count,
+                offset=latent_negative_offset,
+            )
+            if latent_enabled
+            else 0
+        )
+        base_prompt = _as_text(kwargs.get("raw_prompt") or kwargs.get("prompt"))
+        prompt = base_prompt
+        if latent_enabled:
+            prompt = build_latent_prompt(prompt, latent_id)
         messages = [
             {
                 "role": "system",
@@ -532,6 +590,21 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             {"role": "user", "content": prompt},
         ]
         prompt_ids = await self.apply_chat_template(messages)
+        counterfactual_prompt_ids: list[int] | None = None
+        if latent_enabled:
+            counterfactual_messages = [
+                messages[0],
+                {
+                    "role": "user",
+                    "content": build_latent_prompt(
+                        base_prompt,
+                        counterfactual_latent_id,
+                    ),
+                },
+            ]
+            counterfactual_prompt_ids = await self.apply_chat_template(
+                counterfactual_messages
+            )
 
         started = time.monotonic()
         output = await self.server_manager.generate(
@@ -553,10 +626,10 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             skip_special_tokens=True,
         )
         assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
-
-        method_config = self.config.algorithm.get(
-            "cd_grpo",
-            self.config.algorithm.get("ips_grpo", {}),
+        answer_token_count = _answer_token_count(
+            self.tokenizer,
+            assistant_text,
+            raw_response_length,
         )
         consequence = evaluate_consequences(
             assistant_text,
@@ -654,6 +727,10 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "ips_behavior_hash_hi": float(behavior_hash_hi),
             "ips_behavior_hash_lo": float(behavior_hash_lo),
             "valid_mode_count": float(eval_payload["valid_mode_count"]),
+            "latent_enabled": float(latent_enabled),
+            "latent_id": float(latent_id),
+            "latent_negative_id": float(counterfactual_latent_id),
+            "latent_answer_token_count": float(answer_token_count),
         }
         transcript = [{"role": "assistant", "content": assistant_text}]
         if thinking_text:
@@ -677,6 +754,18 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 separators=(",", ":"),
             ),
         }
+        output_extra_fields = {
+            "min_global_steps": 0,
+            "max_global_steps": 0,
+            "reward_extra_info": reward_extra_info,
+            "cd_reward_payload": reward_payload,
+            "cd_eval_payload": eval_payload,
+            "transcript": transcript,
+        }
+        if counterfactual_prompt_ids is not None:
+            output_extra_fields["latent_negative_prompt_ids"] = (
+                counterfactual_prompt_ids
+            )
         return AgentLoopOutput(
             prompt_ids=prompt_ids,
             response_ids=response_ids,
@@ -690,14 +779,7 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 compute_score=0.0,
                 num_preempted=int(output.num_preempted or 0),
             ),
-            extra_fields={
-                "min_global_steps": 0,
-                "max_global_steps": 0,
-                "reward_extra_info": reward_extra_info,
-                "cd_reward_payload": reward_payload,
-                "cd_eval_payload": eval_payload,
-                "transcript": transcript,
-            },
+            extra_fields=output_extra_fields,
         )
 
 

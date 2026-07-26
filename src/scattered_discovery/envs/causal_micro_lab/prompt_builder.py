@@ -3,7 +3,13 @@ from __future__ import annotations
 from typing import Literal
 
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
-from scattered_discovery.envs.causal_micro_lab.symmetry import PromptSymmetry
+
+
+def build_latent_prompt(prompt: str, latent_id: int) -> str:
+    """Condition generation on a semantically neutral strategy identifier."""
+    if latent_id < 1:
+        raise ValueError("latent_id must be positive")
+    return f"Strategy {latent_id} | {prompt}"
 
 
 def build_prompt(
@@ -11,9 +17,7 @@ def build_prompt(
     *,
     output_mode: Literal["single", "multi_answer_rlvr"] = "single",
     answer_count: int = 1,
-    symmetry: PromptSymmetry | None = None,
 ) -> str:
-    transform = symmetry or PromptSymmetry()
     lines = [
         "Infer one Boolean causal program consistent with the evidence.",
         "",
@@ -32,10 +36,9 @@ def build_prompt(
     from scattered_discovery.envs.causal_micro_lab.signatures import build_mode_table
 
     table = build_mode_table()
-    evidence = transform.order_evidence(state.evidence)
-    for index, item in enumerate(evidence, start=1):
+    for index, item in enumerate(state.evidence, start=1):
         experiment = table.experiments[item.experiment_id]
-        inputs = transform.transform_inputs(experiment.inputs)
+        inputs = experiment.inputs
         intervention = experiment.intervention
         if intervention == "OBSERVE":
             intervention_text = "none"

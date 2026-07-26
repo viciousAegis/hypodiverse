@@ -1,8 +1,7 @@
 # Non-Oracle Diversity Method Design
 
 Status: superseded research exploration. The current method candidate is
-documented in
-[`symmetry_stratified_ips_method.md`](symmetry_stratified_ips_method.md).
+documented in [`latent_ips_grpo_method.md`](latent_ips_grpo_method.md).
 The rejected finite-budget set-reward candidate remains documented in
 [`budgeted_mode_coverage_method_audit.md`](budgeted_mode_coverage_method_audit.md).
 
@@ -231,7 +230,6 @@ transfer to canonical evaluation.
 Before making a novelty claim, specifically compare against:
 
 - permutation self-consistency and prompt ensembling;
-- symmetry/data augmentation for reasoning;
 - stochastic beam sampling without replacement;
 - REFT and ROSE rollout diversification;
 - IPS-GRPO and DMPO retention objectives.

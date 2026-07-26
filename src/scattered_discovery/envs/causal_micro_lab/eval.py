@@ -18,18 +18,13 @@ from scattered_discovery.backends import (
     OllamaBackend,
     OpenAICompatibleBackend,
 )
-from scattered_discovery.envs.causal_micro_lab.parser import (
-    HypothesisParseError,
-    parse_hypothesis,
-    parse_record_state,
+from scattered_discovery.envs.causal_micro_lab.parser import parse_record_state
+from scattered_discovery.envs.causal_micro_lab.prompt_builder import (
+    build_latent_prompt,
+    build_prompt,
 )
-from scattered_discovery.envs.causal_micro_lab.prompt_builder import build_prompt
 from scattered_discovery.envs.causal_micro_lab.rewards import group_metrics
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
-from scattered_discovery.envs.causal_micro_lab.symmetry import (
-    PromptSymmetry,
-    symmetry_schedule,
-)
 from scattered_discovery.envs.causal_micro_lab.verifier import (
     SetVerificationResult,
     VerificationResult,
@@ -93,8 +88,7 @@ def _maybe_start_wandb(args: argparse.Namespace):
             "thinking_fallback": args.thinking_fallback,
             "fallback_num_predict": args.fallback_num_predict,
             "fallback_temperature": args.fallback_temperature,
-            "symmetry_stratified": args.symmetry_stratified,
-            "symmetry_seed": args.symmetry_seed,
+            "latent_count": args.latent_count,
         },
     )
 
@@ -283,8 +277,12 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
     ]
     return {
         "episodes": len(records),
-        "parse_valid": _mean([float(r["verification"]["parse_valid"]) for r in records]),
-        "syntax_valid": _mean([float(r["verification"]["syntax_valid"]) for r in records]),
+        "parse_valid": _mean(
+            [float(r["verification"]["parse_valid"]) for r in records]
+        ),
+        "syntax_valid": _mean(
+            [float(r["verification"]["syntax_valid"]) for r in records]
+        ),
         "evidence_consistent": _mean(
             [float(r["verification"]["evidence_consistent"]) for r in records]
         ),
@@ -299,9 +297,7 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
                 for r in records
             ]
         ),
-        "fallback_used": _mean(
-            [float(bool(r.get("fallback_used"))) for r in records]
-        ),
+        "fallback_used": _mean([float(bool(r.get("fallback_used"))) for r in records]),
         "fallback_produced_output": _mean(
             [float(bool(r.get("fallback_produced_output"))) for r in records]
         ),
@@ -367,7 +363,9 @@ def _set_verification_to_eval_dict(
     return data
 
 
-def _verification_results_for_record(record: dict[str, Any]) -> list[VerificationResult]:
+def _verification_results_for_record(
+    record: dict[str, Any],
+) -> list[VerificationResult]:
     verification = record["verification"]
     candidates = verification.get("candidates")
     if candidates:
@@ -406,7 +404,9 @@ def _grouped_set_records(
             for result in _verification_results_for_record(record)
         ]
         metrics = group_metrics(results, state)
-        valid_count = int(metrics["num_unique_valid_modes"] + metrics["duplicate_valid_modes"])
+        valid_count = int(
+            metrics["num_unique_valid_modes"] + metrics["duplicate_valid_modes"]
+        )
         metrics.update(
             {
                 "k": float(len(results)),
@@ -462,8 +462,7 @@ def _grouped_summary_by_pair(
             [
                 item
                 for item in grouped
-                if str(item["state_metadata"].get(outer_key, "missing"))
-                == outer_label
+                if str(item["state_metadata"].get(outer_key, "missing")) == outer_label
             ],
             inner_key,
         )
@@ -474,7 +473,9 @@ def _grouped_summary_by_pair(
 def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary = _summarize_group(records)
     flat_results = [
-        result for record in records for result in _verification_results_for_record(record)
+        result
+        for record in records
+        for result in _verification_results_for_record(record)
     ]
     valid_modes = [
         result.semantic_mode_id
@@ -489,12 +490,18 @@ def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary.update(
         {
             "unique_valid_modes": len(set(valid_modes)),
-            "duplicate_valid_modes": sum(count - 1 for count in Counter(valid_modes).values()),
+            "duplicate_valid_modes": sum(
+                count - 1 for count in Counter(valid_modes).values()
+            ),
             "invalid_format_count": sum(parse_errors.values()),
             "invalid_format_errors": dict(parse_errors.most_common(20)),
             "candidate_outputs": len(flat_results),
-            "candidate_parse_valid": _mean([float(r.parse_valid) for r in flat_results]),
-            "candidate_syntax_valid": _mean([float(r.syntax_valid) for r in flat_results]),
+            "candidate_parse_valid": _mean(
+                [float(r.parse_valid) for r in flat_results]
+            ),
+            "candidate_syntax_valid": _mean(
+                [float(r.syntax_valid) for r in flat_results]
+            ),
             "candidate_evidence_consistent": _mean(
                 [float(r.evidence_consistent) for r in flat_results]
             ),
@@ -527,9 +534,7 @@ def summarize_grouped_records(
         {
             "states": len(grouped),
             "by_M": _grouped_summary_by(grouped, "valid_mode_count"),
-            "by_separation_bucket": _grouped_summary_by(
-                grouped, "separation_bucket"
-            ),
+            "by_separation_bucket": _grouped_summary_by(grouped, "separation_bucket"),
             "by_family_bucket": _grouped_summary_by(grouped, "family_bucket"),
             "by_M_and_separation_bucket": _grouped_summary_by_pair(
                 grouped,
@@ -562,29 +567,19 @@ def evaluate_states(
     thinking_fallback: bool = False,
     fallback_num_predict: int = 256,
     fallback_temperature: float = 0.0,
-    symmetry_stratified: bool = False,
-    symmetry_seed: int = 1,
+    latent_count: int = 0,
 ) -> list[dict[str, Any]]:
     jobs = []
     for state_index, state in enumerate(states):
-        transforms = (
-            symmetry_schedule(
-                state_id=state.state_id,
-                evidence_count=state.evidence_size,
-                group_size=rollouts_per_state,
-                seed=symmetry_seed,
-            )
-            if symmetry_stratified
-            else (PromptSymmetry(),) * rollouts_per_state
-        )
         for rollout_index in range(rollouts_per_state):
-            transform = transforms[rollout_index]
             prompt = build_prompt(
                 state,
                 output_mode=output_mode,
                 answer_count=answer_count,
-                symmetry=transform,
             )
+            latent_id = rollout_index % latent_count + 1 if latent_count else 0
+            if latent_id:
+                prompt = build_latent_prompt(prompt, latent_id)
             messages = [
                 ChatMessage(
                     role="system",
@@ -599,7 +594,7 @@ def evaluate_states(
                     rollout_index,
                     prompt,
                     messages,
-                    transform,
+                    latent_id,
                 )
             )
 
@@ -610,10 +605,17 @@ def evaluate_states(
             int,
             str,
             list[ChatMessage],
-            PromptSymmetry,
-        ]
+            int,
+        ],
     ) -> dict[str, Any]:
-        state_index, state, rollout_index, prompt, messages, transform = job
+        (
+            state_index,
+            state,
+            rollout_index,
+            prompt,
+            messages,
+            latent_id,
+        ) = job
         started = time.monotonic()
         elapsed = time.monotonic() - started
         sample_id = f"{state.state_id}:sample{rollout_index:04d}"
@@ -678,15 +680,6 @@ def evaluate_states(
             else:
                 elapsed = initial_elapsed
             canonical_output = output
-            if symmetry_stratified and output_mode == "single":
-                try:
-                    transformed_hypothesis = parse_hypothesis(output)
-                    canonical_output = transform.inverse_hypothesis(
-                        transformed_hypothesis
-                    ).render_flat_rules()
-                except HypothesisParseError:
-                    # Preserve the original parser error in verification.
-                    pass
             if output_mode == "multi_answer_rlvr":
                 verification = _set_verification_to_eval_dict(
                     verify_output_set(
@@ -744,8 +737,8 @@ def evaluate_states(
             "model_seconds": elapsed,
             "output": output,
             "canonical_output": canonical_output,
-            "symmetry_stratified": symmetry_stratified,
-            "symmetry_transform_id": transform.transform_id,
+            "latent_count": latent_count,
+            "latent_id": latent_id,
             "thinking": thinking,
             "request_error": request_error,
             "initial_finish_reason": initial_finish_reason,
@@ -944,8 +937,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             thinking_fallback=args.thinking_fallback,
             fallback_num_predict=args.fallback_num_predict,
             fallback_temperature=args.fallback_temperature,
-            symmetry_stratified=args.symmetry_stratified,
-            symmetry_seed=args.symmetry_seed,
+            latent_count=args.latent_count,
         )
 
     with episodes_path.open("w", encoding="utf-8") as handle:
@@ -963,6 +955,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             "workers": args.workers,
             "shard_index": args.shard_index,
             "num_shards": args.num_shards,
+            "latent_count": args.latent_count,
             "episodes_path": str(episodes_path),
         }
     )
@@ -975,16 +968,12 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         encoding="utf-8",
     )
     prefix_ks = [
-        int(item)
-        for item in str(args.prefix_ks or "").split(",")
-        if item.strip()
+        int(item) for item in str(args.prefix_ks or "").split(",") if item.strip()
     ]
     prefix_summaries: dict[int, dict[str, Any]] = {}
     for prefix_k in prefix_ks:
         if prefix_k < 1 or prefix_k > args.rollouts_per_state:
-            raise SystemExit(
-                "--prefix-ks values must be in [1, rollouts-per-state]"
-            )
+            raise SystemExit("--prefix-ks values must be in [1, rollouts-per-state]")
         prefix_summary = summarize_grouped_records(
             records,
             states,
@@ -1058,14 +1047,14 @@ def main() -> None:
     parser.add_argument("--fallback-num-predict", type=int, default=256)
     parser.add_argument("--fallback-temperature", type=float, default=0.0)
     parser.add_argument(
-        "--symmetry-stratified",
-        action="store_true",
+        "--latent-count",
+        type=int,
+        default=0,
         help=(
-            "Allocate rollouts across exact prompt symmetries and canonicalize "
-            "generated programs before verification."
+            "Cycle rollouts through Strategy 1..N prompt labels. "
+            "Zero disables latent conditioning."
         ),
     )
-    parser.add_argument("--symmetry-seed", type=int, default=1)
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-run-name")
     args = parser.parse_args()
@@ -1077,6 +1066,8 @@ def main() -> None:
         raise SystemExit("--fallback-num-predict must be >= 1")
     if args.answer_count < 1:
         raise SystemExit("--answer-count must be >= 1")
+    if args.latent_count < 0:
+        raise SystemExit("--latent-count must be >= 0")
     output_dir, summary = run_eval(args)
     print(json.dumps({"output_dir": str(output_dir), "summary": summary}, indent=2))
 

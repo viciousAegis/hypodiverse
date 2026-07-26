@@ -48,7 +48,10 @@ from scattered_discovery.envs.causal_micro_lab.tables import (
     verl_rows_for_states,
     write_table,
 )
-from scattered_discovery.envs.causal_micro_lab.verifier import verify_output, verify_output_set
+from scattered_discovery.envs.causal_micro_lab.verifier import (
+    verify_output,
+    verify_output_set,
+)
 from scattered_discovery.envs.causal_micro_lab.eval import (
     evaluate_states,
     summarize_grouped_records,
@@ -351,13 +354,17 @@ class CausalMicroLabTests(unittest.TestCase):
             oracle_disagreement_experiment(self.state, mode_table=self.table)
         )
         trace = run_oracle_closed_loop(self.state, max_steps=8, mode_table=self.table)
-        self.assertLessEqual(trace.final_version_space_size(), self.state.valid_mode_count)
+        self.assertLessEqual(
+            trace.final_version_space_size(), self.state.valid_mode_count
+        )
 
     def test_dataset_rows_and_oracle_eval(self):
         rows = state_rows([self.state], mode_table=self.table)
         self.assertIn("private", rows[0])
         self.assertIn("maximum_separation", rows[0]["metadata"])
-        sft_rows = sft_rows_for_states([self.state], targets_per_state=2, mode_table=self.table)
+        sft_rows = sft_rows_for_states(
+            [self.state], targets_per_state=2, mode_table=self.table
+        )
         self.assertEqual(len(sft_rows), 2)
         self.assertIn("Z1:", sft_rows[0]["response"])
         self.assertNotIn('"rules"', sft_rows[0]["response"])
@@ -417,14 +424,18 @@ class CausalMicroLabTests(unittest.TestCase):
             split_ids = split_mode_ids(seed=7, mode_table=self.table)
             train_rows = [
                 json.loads(line)
-                for line in outputs["sft_train"].read_text(encoding="utf-8").splitlines()
+                for line in outputs["sft_train"]
+                .read_text(encoding="utf-8")
+                .splitlines()
                 if line.strip()
             ]
             self.assertTrue(train_rows)
             self.assertIn(train_rows[0]["target_mode_id"], split_ids["train"])
             state_rows_from_disk = [
                 json.loads(line)
-                for line in outputs["states_train"].read_text(encoding="utf-8").splitlines()
+                for line in outputs["states_train"]
+                .read_text(encoding="utf-8")
+                .splitlines()
                 if line.strip()
             ]
             self.assertIn("private", state_rows_from_disk[0])
@@ -588,6 +599,36 @@ class CausalMicroLabTests(unittest.TestCase):
                 f"{self.state.state_id}:sample0000",
                 f"{self.state.state_id}:sample0001",
             ],
+        )
+
+    def test_causal_micro_lab_eval_cycles_latent_prompt_labels(self):
+        valid_mode = self.table.modes_by_id[self.state.valid_mode_ids[0]]
+
+        class LatentBackend:
+            def __init__(self):
+                self.prompts = []
+
+            def chat(self, messages, options=None):
+                del options
+                self.prompts.append(messages[-1].content)
+                return ChatResponse(content=valid_mode.canonical.render_rules())
+
+        backend = LatentBackend()
+        records = evaluate_states(
+            states=[self.state],
+            backend=backend,
+            model="static",
+            rollouts_per_state=3,
+            latent_count=2,
+        )
+
+        self.assertEqual(
+            [prompt.split(" |", 1)[0] for prompt in backend.prompts],
+            ["Strategy 1", "Strategy 2", "Strategy 1"],
+        )
+        self.assertEqual([record["latent_id"] for record in records], [1, 2, 1])
+        self.assertTrue(
+            all(record["verification"]["is_currently_valid_mode"] for record in records)
         )
 
     def test_causal_micro_lab_eval_finalizes_length_capped_thinking(self):
