@@ -17,12 +17,16 @@ class ChatMessage:
 class ChatResponse:
     content: str
     thinking: str = ""
+    finish_reason: str | None = None
+    completion_tokens: int | None = None
 
 
 @dataclass(frozen=True)
 class ChatOptions:
     think: bool | str | None = None
     num_predict: int | None = None
+    temperature: float | None = None
+    top_p: float | None = None
 
 
 def split_visible_thinking(content: str) -> tuple[str, str]:
@@ -56,10 +60,21 @@ def split_visible_thinking(content: str) -> tuple[str, str]:
     return stripped.strip(), "\n\n".join(thinking_parts)
 
 
-def normalize_chat_response(content: str, thinking: str = "") -> ChatResponse:
+def normalize_chat_response(
+    content: str,
+    thinking: str = "",
+    *,
+    finish_reason: str | None = None,
+    completion_tokens: int | None = None,
+) -> ChatResponse:
     final_content, visible_thinking = split_visible_thinking(content)
     parts = [part for part in (thinking.strip(), visible_thinking.strip()) if part]
-    return ChatResponse(content=final_content, thinking="\n\n".join(parts))
+    return ChatResponse(
+        content=final_content,
+        thinking="\n\n".join(parts),
+        finish_reason=finish_reason,
+        completion_tokens=completion_tokens,
+    )
 
 
 class ChatBackend(Protocol):

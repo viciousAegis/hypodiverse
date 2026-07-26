@@ -302,6 +302,7 @@ def find_states(
     beam_width: int = 256,
     *,
     mode_table: ModeTable | None = None,
+    max_results: int | None = None,
 ) -> list[EvidenceState]:
     table = mode_table or build_mode_table()
     if isinstance(hidden_mode, int):
@@ -338,6 +339,8 @@ def find_states(
                         compute_separation=True,
                     )
                     saved[state.state_id] = state
+                    if max_results is not None and len(saved) >= max_results:
+                        return assign_separation_buckets(list(saved.values()))
                 score = abs(math.log2(count) - math.log2(target_mode_count)) + (
                     0.05 * len(next_ids)
                 )

@@ -81,6 +81,12 @@ class HuggingFaceBackend(ChatBackend):
             else self.max_tokens
         )
         think = options.think if options and options.think is not None else self.think
+        temperature = (
+            options.temperature
+            if options and options.temperature is not None
+            else self.temperature
+        )
+        top_p = options.top_p if options and options.top_p is not None else self.top_p
         prompt = _apply_chat_template(
             self.tokenizer,
             messages,
@@ -92,18 +98,28 @@ class HuggingFaceBackend(ChatBackend):
             key: value.to(self.model_obj.device)
             for key, value in inputs.items()
         }
-        do_sample = self.temperature > 0
+        do_sample = temperature > 0
         with self._torch.inference_mode():
             generated = self.model_obj.generate(
                 **inputs,
                 max_new_tokens=max_tokens,
                 do_sample=do_sample,
-                temperature=self.temperature if do_sample else None,
-                top_p=self.top_p if do_sample else None,
+                temperature=temperature if do_sample else None,
+                top_p=top_p if do_sample else None,
                 pad_token_id=self.tokenizer.pad_token_id,
                 eos_token_id=self.tokenizer.eos_token_id,
             )
         prompt_len = int(inputs["input_ids"].shape[-1])
         new_tokens = generated[0][prompt_len:]
         content = self.tokenizer.decode(new_tokens, skip_special_tokens=False)
-        return normalize_chat_response(content)
+        finish_reason = (
+            "length"
+            if len(new_tokens) >= max_tokens
+            and int(new_tokens[-1]) != self.tokenizer.eos_token_id
+            else "stop"
+        )
+        return normalize_chat_response(
+            content,
+            finish_reason=finish_reason,
+            completion_tokens=len(new_tokens),
+        )

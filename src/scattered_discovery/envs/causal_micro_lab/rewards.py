@@ -8,6 +8,36 @@ from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceSt
 from scattered_discovery.envs.causal_micro_lab.verifier import VerificationResult
 
 
+def _mean_pairwise_mode_distance(
+    mode_ids: set[str],
+    state: EvidenceState,
+) -> float:
+    if len(mode_ids) < 2:
+        return 0.0
+    table = build_mode_table()
+    observed = {item.experiment_id for item in state.evidence}
+    unobserved = [
+        experiment.experiment_id
+        for experiment in table.experiments
+        if experiment.experiment_id not in observed
+    ]
+    if not unobserved:
+        return 0.0
+    ordered = sorted(mode_ids)
+    distances = []
+    for left_index, left_id in enumerate(ordered):
+        left = table.modes_by_id[left_id]
+        for right_id in ordered[left_index + 1 :]:
+            right = table.modes_by_id[right_id]
+            disagreements = sum(
+                int(left.signature[experiment_id][bit] != right.signature[experiment_id][bit])
+                for experiment_id in unobserved
+                for bit in range(3)
+            )
+            distances.append(disagreements / (3 * len(unobserved)))
+    return sum(distances) / len(distances)
+
+
 def group_metrics(
     results: list[VerificationResult],
     state: EvidenceState,
@@ -27,6 +57,13 @@ def group_metrics(
     probabilities = [count / len(valid_mode_ids) for count in counts.values()] if valid_mode_ids else []
     entropy = -sum(p * math.log(p) for p in probabilities) if probabilities else 0.0
     effective = math.exp(entropy) if probabilities else 0.0
+    dominant_mode_mass = max(probabilities, default=0.0)
+    duplicity = (
+        1.0 - (len(unique_valid) / valid_count)
+        if valid_count
+        else 0.0
+    )
+    generated_separation = _mean_pairwise_mode_distance(unique_valid, state)
     families = {
         tuple(result.mechanism_family)
         for result in results
@@ -49,6 +86,15 @@ def group_metrics(
         "exact_coverage": len(unique_valid) / available,
         "budget_normalized_coverage": len(unique_valid) / budget,
         "effective_mode_count": effective,
+        "mode_entropy": entropy,
+        "dominant_mode_mass": dominant_mode_mass,
+        "duplicity": duplicity,
+        "generated_mode_separation": generated_separation,
+        "generated_to_available_separation": (
+            generated_separation / state.mean_separation
+            if state.mean_separation > 0
+            else 0.0
+        ),
         "duplicate_valid_modes": float(duplicate_valid_modes),
         "unavoidable_duplicate_valid_modes": float(unavoidable_duplicates),
         "extra_duplicate_valid_modes": float(

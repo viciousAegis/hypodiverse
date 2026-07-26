@@ -41,6 +41,7 @@ causal-micro-lab-build-split-dataset = "scattered_discovery.envs.causal_micro_la
 causal-micro-lab-build-eval-rows = "scattered_discovery.envs.causal_micro_lab.cli:build_eval_rows_from_states_main"
 causal-micro-lab-closed-loop-eval = "scattered_discovery.envs.causal_micro_lab.cli:run_closed_loop_eval_main"
 causal-micro-lab-eval-model = "scattered_discovery.envs.causal_micro_lab.eval:main"
+causal-micro-lab-eval-report = "scattered_discovery.envs.causal_micro_lab.report:main"
 causal-micro-lab-viewer = "scattered_discovery.causal_micro_lab_viewer:main"
 scattered-discovery-plot-eval = "scattered_discovery.eval.plot_results:main"
 scattered-discovery-algo-overrides = "scattered_discovery.algos.cli:main"

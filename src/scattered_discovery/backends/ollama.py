@@ -33,6 +33,12 @@ class OllamaBackend(ChatBackend):
             else self.num_predict
         )
         think = options.think if options and options.think is not None else self.think
+        temperature = (
+            options.temperature
+            if options and options.temperature is not None
+            else self.temperature
+        )
+        top_p = options.top_p if options and options.top_p is not None else self.top_p
         payload = {
             "model": self.model,
             "messages": [
@@ -41,8 +47,8 @@ class OllamaBackend(ChatBackend):
             ],
             "stream": False,
             "options": {
-                "temperature": self.temperature,
-                "top_p": self.top_p,
+                "temperature": temperature,
+                "top_p": top_p,
                 "num_predict": num_predict,
             },
         }
@@ -68,4 +74,13 @@ class OllamaBackend(ChatBackend):
         thinking = message.get("thinking", "")
         if not isinstance(content, str) or not isinstance(thinking, str):
             raise RuntimeError(f"Unexpected Ollama response: {raw!r}")
-        return normalize_chat_response(content=content, thinking=thinking)
+        return normalize_chat_response(
+            content=content,
+            thinking=thinking,
+            finish_reason=raw.get("done_reason"),
+            completion_tokens=(
+                int(raw["eval_count"])
+                if isinstance(raw.get("eval_count"), int | float)
+                else None
+            ),
+        )

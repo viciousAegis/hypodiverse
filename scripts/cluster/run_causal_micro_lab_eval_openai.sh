@@ -60,6 +60,10 @@ REQUEST_TIMEOUT_S="${REQUEST_TIMEOUT_S:-1800}"
 TRANSCRIPTS="${TRANSCRIPTS:-0}"
 WANDB_PROJECT="${WANDB_PROJECT:-}"
 THINK="${THINK:-}"
+THINKING_FALLBACK="${THINKING_FALLBACK:-1}"
+FALLBACK_MAX_RESPONSE_LENGTH="${FALLBACK_MAX_RESPONSE_LENGTH:-256}"
+FALLBACK_TEMPERATURE="${FALLBACK_TEMPERATURE:-0.0}"
+BUILD_EVAL_REPORT="${BUILD_EVAL_REPORT:-1}"
 
 LOG_DIR="${EVAL_LOG_DIR:-$OUTPUT_DIR/$RUN_NAME/logs}"
 mkdir -p "$LOG_DIR"
@@ -147,6 +151,13 @@ fi
 if [[ -n "$THINK" ]]; then
   ARGS+=(--think "$THINK")
 fi
+if [[ "$THINKING_FALLBACK" == "1" ]]; then
+  ARGS+=(
+    --thinking-fallback
+    --fallback-num-predict "$FALLBACK_MAX_RESPONSE_LENGTH"
+    --fallback-temperature "$FALLBACK_TEMPERATURE"
+  )
+fi
 if [[ "${TRANSCRIPTS:-0}" == "1" ]]; then
   ARGS+=(--transcripts)
 fi
@@ -156,7 +167,16 @@ fi
 
 "$PYTHON_BIN" -m scattered_discovery.envs.causal_micro_lab.eval "${ARGS[@]}" "$@"
 
+if [[ "$BUILD_EVAL_REPORT" == "1" ]]; then
+  "$PYTHON_BIN" -m scattered_discovery.envs.causal_micro_lab.report \
+    --episodes "$OUTPUT_DIR/$RUN_NAME/latest/episodes.jsonl" \
+    --states "$EVAL_FILE" \
+    --output-dir "$OUTPUT_DIR/$RUN_NAME/latest/report" \
+    --ks "${PREFIX_KS:-$ROLLOUTS_PER_SPEC}"
+fi
+
 echo "Eval output: $OUTPUT_DIR/$RUN_NAME"
 echo "Latest per-sample summary: $OUTPUT_DIR/$RUN_NAME/latest/summary.json"
 echo "Latest grouped set summary: $OUTPUT_DIR/$RUN_NAME/latest/set_summary.json"
+echo "Latest report CSVs: $OUTPUT_DIR/$RUN_NAME/latest/report/"
 echo "Run log: $RUN_LOG_FILE"

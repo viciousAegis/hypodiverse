@@ -197,6 +197,46 @@ Those three files are computed from the same generated sample slots
 `sample0000` through `sample0015`, so `k=4` is the first four samples of the
 same `k=16` run rather than a separate stochastic eval.
 
+## Frozen final comparison eval
+
+The replacement comparison set is committed under:
+
+```text
+eval_sets/causal_micro_lab/final_v1/
+```
+
+It contains 96 states: 24 each for `M={4,8,12,16}`. Every `M` cell contains
+eight low-, eight medium-, and eight high-separation states, and every row uses
+a distinct held-out hidden mode. Its manifest records SHA-256 hashes and the
+zero-overlap audit against the previous canonical validation/test set.
+
+Run the Qwen3-4B base-model evaluation on one cluster GPU with:
+
+```bash
+sbatch scripts/cluster/sbatch_causal_micro_lab_final_eval.slurm
+```
+
+The run samples `K=16` independent completions per state and derives
+`K={4,8,12}` from stable prefixes of the same bank. Each primary request gets
+4096 response tokens with Qwen thinking enabled. A request ending with
+`finish_reason=length` is automatically finalized by a short deterministic
+second request with thinking disabled and the original reasoning supplied as
+context.
+
+Results and live W&B metrics are written under:
+
+```text
+artifacts/causal_micro_lab_final_eval/
+```
+
+The `latest/report/` directory contains CSV tables for bootstrap confidence
+intervals, per-state metrics, `K x M x separation` slices, and mode
+reachability. Corresponding comparison plots are logged to W&B. Important
+outputs include exact and
+budget-normalized coverage, valid-output rate, duplicity among valid outputs,
+dominant-mode mass, effective mode count, mechanism-family coverage, generated
+consequence separation, cap-hit rate, and fallback success.
+
 ## CD-GRPO on the Slurm cluster
 
 CD-GRPO uses a dedicated agent loop and a project-owned veRL v1 TaskRunner.

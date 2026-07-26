@@ -37,14 +37,20 @@ class OpenAICompatibleBackend(ChatBackend):
             else self.max_tokens
         )
         think = options.think if options and options.think is not None else self.think
+        temperature = (
+            options.temperature
+            if options and options.temperature is not None
+            else self.temperature
+        )
+        top_p = options.top_p if options and options.top_p is not None else self.top_p
         payload = {
             "model": self.model,
             "messages": [
                 {"role": message.role, "content": message.content}
                 for message in messages
             ],
-            "temperature": self.temperature,
-            "top_p": self.top_p,
+            "temperature": temperature,
+            "top_p": top_p,
             "max_tokens": max_tokens,
         }
         if isinstance(think, bool):
@@ -77,11 +83,23 @@ class OpenAICompatibleBackend(ChatBackend):
         choices = raw.get("choices") or []
         if not choices:
             raise RuntimeError(f"Unexpected chat completion response: {raw!r}")
-        message = choices[0].get("message") or {}
+        choice = choices[0]
+        message = choice.get("message") or {}
         content = message.get("content", "")
         thinking = message.get("reasoning_content", message.get("thinking", ""))
         if thinking is None:
             thinking = ""
         if not isinstance(content, str) or not isinstance(thinking, str):
             raise RuntimeError(f"Unexpected chat completion message: {message!r}")
-        return normalize_chat_response(content=content, thinking=thinking)
+        usage = raw.get("usage") or {}
+        completion_tokens = usage.get("completion_tokens")
+        return normalize_chat_response(
+            content=content,
+            thinking=thinking,
+            finish_reason=choice.get("finish_reason"),
+            completion_tokens=(
+                int(completion_tokens)
+                if isinstance(completion_tokens, int | float)
+                else None
+            ),
+        )

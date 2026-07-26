@@ -590,6 +590,45 @@ class CausalMicroLabTests(unittest.TestCase):
             ],
         )
 
+    def test_causal_micro_lab_eval_finalizes_length_capped_thinking(self):
+        valid_mode = self.table.modes_by_id[self.state.valid_mode_ids[0]]
+
+        class FallbackBackend:
+            def __init__(self):
+                self.calls = []
+
+            def chat(self, messages, options=None):
+                self.calls.append((messages, options))
+                if len(self.calls) == 1:
+                    return ChatResponse(
+                        content="",
+                        thinking="I should use a direct rule.",
+                        finish_reason="length",
+                        completion_tokens=4096,
+                    )
+                return ChatResponse(
+                    content=valid_mode.canonical.render_rules(),
+                    finish_reason="stop",
+                    completion_tokens=24,
+                )
+
+        backend = FallbackBackend()
+        records = evaluate_states(
+            states=[self.state],
+            backend=backend,
+            model="static",
+            rollouts_per_state=1,
+            thinking_fallback=True,
+            fallback_num_predict=256,
+        )
+        self.assertEqual(len(backend.calls), 2)
+        self.assertFalse(backend.calls[1][1].think)
+        self.assertEqual(backend.calls[1][1].num_predict, 256)
+        self.assertTrue(records[0]["fallback_used"])
+        self.assertTrue(records[0]["fallback_produced_output"])
+        self.assertEqual(records[0]["initial_completion_tokens"], 4096)
+        self.assertTrue(records[0]["verification"]["is_currently_valid_mode"])
+
     def test_factory_env_and_agent_loop_import(self):
         env = make_env(
             EnvSpec(

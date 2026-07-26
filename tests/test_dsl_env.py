@@ -22,6 +22,16 @@ class DSLAndEnvTests(unittest.TestCase):
         self.assertEqual(response.content, "ACTION: INTERVENE x00")
         self.assertEqual(response.thinking, "try edge first")
 
+    def test_normalize_chat_response_preserves_generation_metadata(self) -> None:
+        response = normalize_chat_response(
+            "<think>unfinished",
+            finish_reason="length",
+            completion_tokens=4096,
+        )
+        self.assertEqual(response.thinking, "unfinished")
+        self.assertEqual(response.finish_reason, "length")
+        self.assertEqual(response.completion_tokens, 4096)
+
     def test_parse_commit_set(self) -> None:
         action = parse_action_line(
             "ACTION: COMMIT [path(x00,x01,x02); path(x10,x11,x12)]"

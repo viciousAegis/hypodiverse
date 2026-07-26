@@ -1,0 +1,52 @@
+{
+  "beam_width": 256,
+  "candidate_multiplier": 2,
+  "counts_by_M": {
+    "12": 24,
+    "16": 24,
+    "4": 24,
+    "8": 24
+  },
+  "counts_by_family": {
+    "cross_family": 36,
+    "mixed": 36,
+    "within_family": 24
+  },
+  "counts_by_separation": {
+    "high": 32,
+    "low": 32,
+    "medium": 32
+  },
+  "excluded_hidden_mode_count": 3,
+  "excluded_paths": [
+    "data/causal_micro_lab/pilot_sft/states_test.jsonl",
+    "data/causal_micro_lab/pilot_sft/states_train.jsonl",
+    "data/causal_micro_lab/pilot_sft/states_val.jsonl"
+  ],
+  "excluded_state_count": 768,
+  "excluded_visible_prompt_count": 768,
+  "files": {
+    "states.jsonl": "103c5ad28e2aeeaa9032ad03440e37e104a6f3587ec48500ec3f05ade2c41a3c",
+    "verl_test.jsonl": "d4141d8afd4d44f6fc75a4c32afacfa1bd3db4e1c10f0909a506e5f146fdae47"
+  },
+  "generation_seed": 20260726,
+  "legacy_canonical_audit": {
+    "hidden_mode_overlap": 0,
+    "legacy_rows": 768,
+    "state_id_overlap": 0,
+    "visible_evidence_overlap": 0
+  },
+  "max_evidence": 8,
+  "name": "causal_micro_lab_final_eval_v1",
+  "one_state_per_hidden_mode": true,
+  "source_mode_split": "test",
+  "split_seed": 1,
+  "states_per_count": 24,
+  "target_counts": [
+    4,
+    8,
+    12,
+    16
+  ],
+  "total_states": 96
+}

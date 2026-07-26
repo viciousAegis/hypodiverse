@@ -13,6 +13,7 @@ from typing import Any, Callable
 from scattered_discovery.backends import (
     ChatBackend,
     ChatMessage,
+    ChatOptions,
     HuggingFaceBackend,
     OllamaBackend,
     OpenAICompatibleBackend,
@@ -81,8 +82,111 @@ def _maybe_start_wandb(args: argparse.Namespace):
             "prefix_ks": args.prefix_ks,
             "output_mode": args.output_mode,
             "answer_count": args.answer_count,
+            "thinking_fallback": args.thinking_fallback,
+            "fallback_num_predict": args.fallback_num_predict,
+            "fallback_temperature": args.fallback_temperature,
         },
     )
+
+
+def _log_wandb_set_plots(
+    wandb_run: Any,
+    summaries_by_k: dict[int, dict[str, Any]],
+) -> None:
+    import wandb
+
+    ks = sorted(summaries_by_k)
+    mode_counts = sorted(
+        {
+            int(mode_count)
+            for summary in summaries_by_k.values()
+            for mode_count in summary.get("by_M", {})
+        }
+    )
+    metrics = (
+        "exact_coverage",
+        "budget_normalized_coverage",
+        "valid_mode_rate",
+        "duplicity",
+        "dominant_mode_mass",
+        "effective_mode_count",
+        "family_coverage",
+        "generated_mode_separation",
+    )
+    table_columns = ["K", "M", *metrics]
+    table_data = []
+    for k in ks:
+        by_m = summaries_by_k[k].get("by_M", {})
+        for mode_count in mode_counts:
+            values = by_m.get(str(mode_count), {})
+            table_data.append(
+                [
+                    k,
+                    mode_count,
+                    *[float(values.get(metric, 0.0)) for metric in metrics],
+                ]
+            )
+    wandb_run.log(
+        {
+            "eval_tables/set_metrics_by_k_m": wandb.Table(
+                columns=table_columns,
+                data=table_data,
+            )
+        }
+    )
+    for metric in metrics:
+        wandb_run.log(
+            {
+                f"eval_plots/{metric}_by_M": wandb.plot.line_series(
+                    xs=ks,
+                    ys=[
+                        [
+                            float(
+                                summaries_by_k[k]
+                                .get("by_M", {})
+                                .get(str(mode_count), {})
+                                .get(metric, 0.0)
+                            )
+                            for k in ks
+                        ]
+                        for mode_count in mode_counts
+                    ],
+                    keys=[f"M={mode_count}" for mode_count in mode_counts],
+                    title=f"{metric.replace('_', ' ').title()} by M",
+                    xname="K",
+                )
+            }
+        )
+
+    separation_buckets = ("low", "medium", "high")
+    for metric in (
+        "exact_coverage",
+        "duplicity",
+        "effective_mode_count",
+        "generated_mode_separation",
+    ):
+        wandb_run.log(
+            {
+                f"eval_plots/{metric}_by_separation": wandb.plot.line_series(
+                    xs=ks,
+                    ys=[
+                        [
+                            float(
+                                summaries_by_k[k]
+                                .get("by_separation_bucket", {})
+                                .get(bucket, {})
+                                .get(metric, 0.0)
+                            )
+                            for k in ks
+                        ]
+                        for bucket in separation_buckets
+                    ],
+                    keys=list(separation_buckets),
+                    title=f"{metric.replace('_', ' ').title()} by Separation",
+                    xname="K",
+                )
+            }
+        )
 
 
 def load_states(path: str | Path) -> list[EvidenceState]:
@@ -155,6 +259,18 @@ def _mean(values: list[float]) -> float:
 
 
 def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
+    initial_tokens = [
+        float(r["initial_completion_tokens"])
+        for r in records
+        if r.get("initial_completion_tokens") is not None
+    ]
+    total_tokens = [
+        float(r.get("initial_completion_tokens") or 0)
+        + float(r.get("fallback_completion_tokens") or 0)
+        for r in records
+        if r.get("initial_completion_tokens") is not None
+        or r.get("fallback_completion_tokens") is not None
+    ]
     return {
         "episodes": len(records),
         "parse_valid": _mean([float(r["verification"]["parse_valid"]) for r in records]),
@@ -167,6 +283,26 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "nonempty_output": _mean([float(bool(r["output"].strip())) for r in records]),
         "request_error": _mean([float(bool(r.get("request_error"))) for r in records]),
+        "length_cap_hit": _mean(
+            [
+                float(r.get("initial_finish_reason") in {"length", "max_tokens"})
+                for r in records
+            ]
+        ),
+        "fallback_used": _mean(
+            [float(bool(r.get("fallback_used"))) for r in records]
+        ),
+        "fallback_produced_output": _mean(
+            [float(bool(r.get("fallback_produced_output"))) for r in records]
+        ),
+        "fallback_request_error": _mean(
+            [float(bool(r.get("fallback_request_error"))) for r in records]
+        ),
+        "initial_completion_tokens_mean": _mean(initial_tokens),
+        "total_completion_tokens_mean": _mean(total_tokens),
+        "thinking_chars_mean": _mean(
+            [float(len(str(r.get("thinking") or ""))) for r in records]
+        ),
         "model_seconds_total": sum(float(r["model_seconds"]) for r in records),
     }
 
@@ -296,9 +432,32 @@ def _grouped_summary_by(
     for item in grouped:
         label = str(item["state_metadata"].get(key, "missing"))
         buckets.setdefault(label, []).append(item["metrics"])
+    result = {}
+    for label, items in sorted(buckets.items(), key=lambda item: item[0]):
+        result[label] = _mean_dicts(items)
+        result[label]["states"] = float(len(items))
+    return result
+
+
+def _grouped_summary_by_pair(
+    grouped: list[dict[str, Any]],
+    outer_key: str,
+    inner_key: str,
+) -> dict[str, dict[str, dict[str, float]]]:
+    outer_labels = sorted(
+        {str(item["state_metadata"].get(outer_key, "missing")) for item in grouped}
+    )
     return {
-        label: _mean_dicts(items)
-        for label, items in sorted(buckets.items(), key=lambda item: item[0])
+        outer_label: _grouped_summary_by(
+            [
+                item
+                for item in grouped
+                if str(item["state_metadata"].get(outer_key, "missing"))
+                == outer_label
+            ],
+            inner_key,
+        )
+        for outer_label in outer_labels
     }
 
 
@@ -362,6 +521,16 @@ def summarize_grouped_records(
                 grouped, "separation_bucket"
             ),
             "by_family_bucket": _grouped_summary_by(grouped, "family_bucket"),
+            "by_M_and_separation_bucket": _grouped_summary_by_pair(
+                grouped,
+                "valid_mode_count",
+                "separation_bucket",
+            ),
+            "by_M_and_family_bucket": _grouped_summary_by_pair(
+                grouped,
+                "valid_mode_count",
+                "family_bucket",
+            ),
         }
     )
     return summary
@@ -380,6 +549,9 @@ def evaluate_states(
     progress_interval_s: float = 60.0,
     output_mode: str = "single",
     answer_count: int = 1,
+    thinking_fallback: bool = False,
+    fallback_num_predict: int = 256,
+    fallback_temperature: float = 0.0,
 ) -> list[dict[str, Any]]:
     jobs = []
     for state_index, state in enumerate(states):
@@ -403,11 +575,66 @@ def evaluate_states(
         started = time.monotonic()
         elapsed = time.monotonic() - started
         sample_id = f"{state.state_id}:sample{rollout_index:04d}"
+        initial_finish_reason = None
+        initial_completion_tokens = None
+        fallback_used = False
+        fallback_finish_reason = None
+        fallback_completion_tokens = None
+        fallback_seconds = 0.0
+        fallback_request_error = None
+        fallback_produced_output = False
         try:
             response = backend.chat(messages)
-            elapsed = time.monotonic() - started
+            initial_elapsed = time.monotonic() - started
             output = response.content
             thinking = response.thinking
+            initial_finish_reason = response.finish_reason
+            initial_completion_tokens = response.completion_tokens
+            if thinking_fallback and response.finish_reason in {"length", "max_tokens"}:
+                fallback_used = True
+                if output_mode == "multi_answer_rlvr":
+                    final_instruction = (
+                        f"Using the reasoning above, return exactly {answer_count} "
+                        "answers in the required answer-tag format. Do not think further "
+                        "and output nothing except the answers."
+                    )
+                else:
+                    final_instruction = (
+                        "Using the reasoning above, return the final hypothesis now. "
+                        "Do not think further. Output exactly these three rule lines and "
+                        "nothing else:\nZ1: ...\nZ2: ...\nY: ..."
+                    )
+                fallback_messages = [
+                    *messages,
+                    ChatMessage(
+                        role="assistant",
+                        content=f"<think>\n{thinking}\n</think>",
+                    ),
+                    ChatMessage(role="user", content=final_instruction),
+                ]
+                fallback_started = time.monotonic()
+                try:
+                    finalized = backend.chat(
+                        fallback_messages,
+                        options=ChatOptions(
+                            think=False,
+                            num_predict=fallback_num_predict,
+                            temperature=fallback_temperature,
+                            top_p=1.0,
+                        ),
+                    )
+                    fallback_seconds = time.monotonic() - fallback_started
+                    fallback_finish_reason = finalized.finish_reason
+                    fallback_completion_tokens = finalized.completion_tokens
+                    if finalized.content.strip():
+                        output = finalized.content
+                        fallback_produced_output = True
+                except Exception as exc:  # noqa: BLE001
+                    fallback_seconds = time.monotonic() - fallback_started
+                    fallback_request_error = f"{type(exc).__name__}: {exc}"
+                elapsed = initial_elapsed + fallback_seconds
+            else:
+                elapsed = initial_elapsed
             if output_mode == "multi_answer_rlvr":
                 verification = _set_verification_to_eval_dict(
                     verify_output_set(
@@ -465,6 +692,14 @@ def evaluate_states(
             "output": output,
             "thinking": thinking,
             "request_error": request_error,
+            "initial_finish_reason": initial_finish_reason,
+            "initial_completion_tokens": initial_completion_tokens,
+            "fallback_used": fallback_used,
+            "fallback_finish_reason": fallback_finish_reason,
+            "fallback_completion_tokens": fallback_completion_tokens,
+            "fallback_seconds": fallback_seconds,
+            "fallback_request_error": fallback_request_error,
+            "fallback_produced_output": fallback_produced_output,
             "verification": verification,
             "state_metadata": {
                 "valid_mode_count": state.valid_mode_count,
@@ -581,6 +816,22 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                     ),
                     "eval/nonempty_output": float(bool(record["output"].strip())),
                     "eval/request_error": float(bool(record["request_error"])),
+                    "eval/length_cap_hit": float(
+                        record.get("initial_finish_reason") in {"length", "max_tokens"}
+                    ),
+                    "eval/fallback_used": float(bool(record.get("fallback_used"))),
+                    "eval/fallback_produced_output": float(
+                        bool(record.get("fallback_produced_output"))
+                    ),
+                    "eval/fallback_request_error": float(
+                        bool(record.get("fallback_request_error"))
+                    ),
+                    "eval/initial_completion_tokens": float(
+                        record.get("initial_completion_tokens") or 0
+                    ),
+                    "eval/fallback_completion_tokens": float(
+                        record.get("fallback_completion_tokens") or 0
+                    ),
                     "eval/model_seconds": float(record["model_seconds"]),
                     "eval/state_index": int(record["state_index"]),
                     "eval/rollout_index": int(record["rollout_index"]),
@@ -634,6 +885,9 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             progress_interval_s=30.0,
             output_mode=args.output_mode,
             answer_count=args.answer_count,
+            thinking_fallback=args.thinking_fallback,
+            fallback_num_predict=args.fallback_num_predict,
+            fallback_temperature=args.fallback_temperature,
         )
 
     with episodes_path.open("w", encoding="utf-8") as handle:
@@ -667,6 +921,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         for item in str(args.prefix_ks or "").split(",")
         if item.strip()
     ]
+    prefix_summaries: dict[int, dict[str, Any]] = {}
     for prefix_k in prefix_ks:
         if prefix_k < 1 or prefix_k > args.rollouts_per_state:
             raise SystemExit(
@@ -677,6 +932,7 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             states,
             max_rollout_index=prefix_k,
         )
+        prefix_summaries[prefix_k] = prefix_summary
         (output_dir / f"set_summary_k{prefix_k}.json").write_text(
             json.dumps(prefix_summary, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -692,6 +948,8 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
     if wandb_run is not None:
         wandb_run.log(_flatten_numeric(summary, prefix="eval_summary"))
         wandb_run.log(_flatten_numeric(set_summary, prefix="set_summary"))
+        if prefix_summaries:
+            _log_wandb_set_plots(wandb_run, prefix_summaries)
         wandb_run.finish()
     return output_dir, summary
 
@@ -731,6 +989,16 @@ def main() -> None:
     )
     parser.add_argument("--answer-count", type=int, default=1)
     parser.add_argument("--transcripts", action="store_true")
+    parser.add_argument(
+        "--thinking-fallback",
+        action="store_true",
+        help=(
+            "When the thinking request ends with finish_reason=length, append its "
+            "reasoning to the conversation and make a short non-thinking finalizer call."
+        ),
+    )
+    parser.add_argument("--fallback-num-predict", type=int, default=256)
+    parser.add_argument("--fallback-temperature", type=float, default=0.0)
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-run-name")
     args = parser.parse_args()
@@ -738,6 +1006,8 @@ def main() -> None:
         raise SystemExit("--rollouts-per-state must be >= 1")
     if args.workers < 1:
         raise SystemExit("--workers must be >= 1")
+    if args.fallback_num_predict < 1:
+        raise SystemExit("--fallback-num-predict must be >= 1")
     if args.answer_count < 1:
         raise SystemExit("--answer-count must be >= 1")
     output_dir, summary = run_eval(args)
