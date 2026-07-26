@@ -238,6 +238,15 @@ if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
   )
 fi
 
+IPS_GRPO=()
+if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.ips_grpo_main" ]]; then
+  IPS_GRPO=(
+    +algorithm.ips_grpo.epsilon="${IPS_GRPO_EPSILON:-0.2}"
+    +algorithm.ips_grpo.probe_fraction="${IPS_GRPO_PROBE_FRACTION:-1.0}"
+    +algorithm.ips_grpo.length_penalty_start="${IPS_GRPO_LENGTH_PENALTY_START:-3072}"
+  )
+fi
+
 if [[ -n "$RESUME_FROM_PATH" ]]; then
   TRAINER+=(trainer.resume_from_path="${RESUME_FROM_PATH}")
 fi
@@ -250,4 +259,5 @@ fi
   "${REF[@]}" \
   "${TRAINER[@]}" \
   "${CD_GRPO[@]}" \
+  "${IPS_GRPO[@]}" \
   "$@"

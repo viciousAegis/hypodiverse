@@ -116,7 +116,7 @@ else
 fi
 
 retry_cmd uv pip install -e "$VERL_SRC[sglang]"
-retry_cmd uv pip install TransferQueue
+retry_cmd uv pip install "TransferQueue==0.1.8"
 
 SGLANG_SPEC="${SGLANG_SPEC:-sglang==0.5.8}"
 retry_cmd uv pip install "$SGLANG_SPEC"

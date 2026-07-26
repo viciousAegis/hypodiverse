@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -55,6 +56,17 @@ def _as_text(value: Any) -> str:
     return str(value)
 
 
+def _behavior_hash_parts(behavior_key: str | None) -> tuple[int, int]:
+    """Encode an outcome identity as two exactly representable numeric fields."""
+    if not behavior_key:
+        return -1, -1
+    digest = hashlib.sha256(behavior_key.encode("utf-8")).digest()
+    return (
+        int.from_bytes(digest[:4], byteorder="big", signed=False),
+        int.from_bytes(digest[4:8], byteorder="big", signed=False),
+    )
+
+
 def _truncate_response_budget(
     response_ids: list[int],
     response_mask: list[int],
@@ -88,7 +100,9 @@ def _generation_log_probs(
     return [float(value) for value in values]
 
 
-def _apply_chat_template_no_thinking(tokenizer: Any, messages: list[dict[str, str]]) -> list[int]:
+def _apply_chat_template_no_thinking(
+    tokenizer: Any, messages: list[dict[str, str]]
+) -> list[int]:
     kwargs: dict[str, Any] = {
         "add_generation_prompt": True,
         "tokenize": True,
@@ -152,7 +166,9 @@ def _config_float(
     return _env_float(env_name, default)
 
 
-def _config_bool(config: dict[str, Any], key: str, env_name: str, default: bool) -> bool:
+def _config_bool(
+    config: dict[str, Any], key: str, env_name: str, default: bool
+) -> bool:
     if key in config and config[key] is not None:
         return bool(config[key])
     raw = os.environ.get(env_name)
@@ -407,12 +423,15 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
             if max_response_length > 0
             else False
         )
-        mask_truncated = _config_bool(
-            agent_config,
-            "mask_truncated",
-            "CAUSAL_MICRO_LAB_MASK_TRUNCATED",
-            False,
-        ) and response_length_cap_hit
+        mask_truncated = (
+            _config_bool(
+                agent_config,
+                "mask_truncated",
+                "CAUSAL_MICRO_LAB_MASK_TRUNCATED",
+                False,
+            )
+            and response_length_cap_hit
+        )
 
         response_ids, response_mask = _truncate_response_budget(
             response_ids,
@@ -445,9 +464,7 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "recovery": float(score.metrics.get("recovery", 0.0)),
             "parse_valid": float(score.metrics.get("parse_valid", 0.0)),
             "syntax_valid": float(score.metrics.get("syntax_valid", 0.0)),
-            "evidence_consistent": float(
-                score.metrics.get("evidence_consistent", 0.0)
-            ),
+            "evidence_consistent": float(score.metrics.get("evidence_consistent", 0.0)),
             "valid_mode_count": float(score.metrics.get("valid_mode_count", 0.0)),
             "response_length_raw": float(raw_response_length),
             "response_length_penalty_start": float(length_penalty_start),
@@ -537,15 +554,18 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         )
         assistant_text, thinking_text = split_visible_thinking(raw_assistant_text)
 
-        cd_config = self.config.algorithm.get("cd_grpo", {})
+        method_config = self.config.algorithm.get(
+            "cd_grpo",
+            self.config.algorithm.get("ips_grpo", {}),
+        )
         consequence = evaluate_consequences(
             assistant_text,
             state_record,
             truncated=cap_hit,
-            probe_fraction=float(cd_config.get("probe_fraction", 1.0)),
+            probe_fraction=float(method_config.get("probe_fraction", 1.0)),
         )
         length_penalty_start = _config_int(
-            cd_config,
+            method_config,
             "length_penalty_start",
             "CD_GRPO_LENGTH_PENALTY_START",
             _config_int(
@@ -569,9 +589,7 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         )
         base_reward, syntax_reward, validity_reward = base_candidate_reward(
             consequence,
-            syntax_valid_reward=float(
-                task_config.get("syntax_valid_reward", 0.2)
-            ),
+            syntax_valid_reward=float(task_config.get("syntax_valid_reward", 0.2)),
             valid_hypothesis_reward=float(
                 task_config.get("valid_hypothesis_reward", 1.0)
             ),
@@ -586,12 +604,15 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         )
         if response_logprobs is not None:
             response_logprobs = response_logprobs[: len(response_ids)]
-        mask_truncated = _config_bool(
-            agent_config,
-            "mask_truncated",
-            "CAUSAL_MICRO_LAB_MASK_TRUNCATED",
-            False,
-        ) and cap_hit
+        mask_truncated = (
+            _config_bool(
+                agent_config,
+                "mask_truncated",
+                "CAUSAL_MICRO_LAB_MASK_TRUNCATED",
+                False,
+            )
+            and cap_hit
+        )
         if mask_truncated:
             response_mask = [0] * len(response_mask)
         if not response_ids:
@@ -609,11 +630,12 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         metadata = state_record.get("metadata") or {}
         eval_payload = {
             "valid_mode_count": int(metadata.get("valid_mode_count", 0)),
-            "separation_bucket": str(
-                metadata.get("separation_bucket", "unknown")
-            ),
+            "separation_bucket": str(metadata.get("separation_bucket", "unknown")),
             "family_bucket": str(metadata.get("family_bucket", "unknown")),
         }
+        behavior_hash_hi, behavior_hash_lo = _behavior_hash_parts(
+            consequence.behavior_key
+        )
         metrics = {
             "terminal_reward": float(reward_score),
             "base_terminal_reward": float(base_reward),
@@ -629,6 +651,8 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "reward_syntax_valid": float(syntax_reward),
             "reward_valid_hypothesis": float(validity_reward),
             "cd_probe_count": float(len(consequence.probe_experiment_ids)),
+            "ips_behavior_hash_hi": float(behavior_hash_hi),
+            "ips_behavior_hash_lo": float(behavior_hash_lo),
             "valid_mode_count": float(eval_payload["valid_mode_count"]),
         }
         transcript = [{"role": "assistant", "content": assistant_text}]
@@ -675,3 +699,21 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
                 "transcript": transcript,
             },
         )
+
+
+@register("ips_grpo_agent_loop")
+class IPSGRPOAgentLoop(CDGRPOAgentLoop):  # type: ignore[misc]
+    """Consequence-aware rollout used by the IPS-GRPO trainer."""
+
+    async def run(self, sampling_params: dict[str, Any], **kwargs) -> Any:
+        output = await super().run(sampling_params, **kwargs)
+        reward_extra_info = output.extra_fields.get("reward_extra_info", {})
+        for key in (
+            "cd_reward_payload",
+            "cd_eval_payload",
+            "cd_reward_payload_json",
+            "cd_eval_payload_json",
+        ):
+            reward_extra_info.pop(key, None)
+            output.extra_fields.pop(key, None)
+        return output

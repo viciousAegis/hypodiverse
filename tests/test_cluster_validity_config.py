@@ -11,14 +11,14 @@ RUN_CONFIG_DIR = ROOT / "configs" / "verl" / "runs"
 class ClusterValidityConfigTests(unittest.TestCase):
     def test_validity_and_cd_grpo_match_shared_compute_settings(self):
         validity = yaml.safe_load(
-            (
-                RUN_CONFIG_DIR / "causal_micro_lab_cluster_validity_grpo.yaml"
-            ).read_text(encoding="utf-8")
+            (RUN_CONFIG_DIR / "causal_micro_lab_cluster_validity_grpo.yaml").read_text(
+                encoding="utf-8"
+            )
         )
         cd_grpo = yaml.safe_load(
-            (
-                RUN_CONFIG_DIR / "causal_micro_lab_cluster_cd_grpo.yaml"
-            ).read_text(encoding="utf-8")
+            (RUN_CONFIG_DIR / "causal_micro_lab_cluster_cd_grpo.yaml").read_text(
+                encoding="utf-8"
+            )
         )
 
         shared_keys = (
@@ -60,6 +60,34 @@ class ClusterValidityConfigTests(unittest.TestCase):
         self.assertEqual(validity["rollout_n"], 8)
         self.assertEqual(cd_grpo["rollout_n"], 16)
 
+    def test_validity_and_ips_grpo_have_identical_workload(self):
+        validity = yaml.safe_load(
+            (RUN_CONFIG_DIR / "causal_micro_lab_cluster_validity_grpo.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        ips = yaml.safe_load(
+            (RUN_CONFIG_DIR / "causal_micro_lab_cluster_ips_grpo.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        for key in (
+            "train_file",
+            "val_file",
+            "n_gpus_per_node",
+            "train_batch_size",
+            "ppo_mini_batch_size",
+            "rollout_n",
+            "max_prompt_length",
+            "max_response_length",
+            "total_training_steps",
+            "temperature",
+            "top_p",
+            "actor_lr",
+        ):
+            self.assertEqual(validity[key], ips[key], key)
+        self.assertEqual(ips["train_batch_size"] * ips["rollout_n"], 128)
+
     def test_validity_slurm_entrypoint_uses_two_gpu_config_and_wandb(self):
         slurm = (
             ROOT / "scripts" / "cluster" / "sbatch_causal_micro_lab_validity_grpo.slurm"
@@ -71,9 +99,9 @@ class ClusterValidityConfigTests(unittest.TestCase):
         self.assertIn("scripts/cluster/run_verl_pilot_grpo.sh", slurm)
 
     def test_causal_dataset_manifest_is_checked_on_every_launch(self):
-        wrapper = (
-            ROOT / "scripts" / "cluster" / "run_verl_pilot_grpo.sh"
-        ).read_text(encoding="utf-8")
+        wrapper = (ROOT / "scripts" / "cluster" / "run_verl_pilot_grpo.sh").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn(
             "scripts/cluster/prepare_causal_micro_lab_dataset.sh",
