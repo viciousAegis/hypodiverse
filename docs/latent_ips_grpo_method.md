@@ -112,15 +112,14 @@ Latent-only ablation:
 sbatch scripts/cluster/sbatch_causal_micro_lab_latent_grpo.slurm latent-only
 ```
 
-Both use the same `data/causal_micro_lab/trainable` split as validity GRPO,
+Both use the same `data/causal_micro_lab/trainable` files as validity GRPO,
 Qwen3-4B, two GPUs, 16 states per update, eight rollouts per state, a 6000-token
 response cap, and length shaping beginning at 3072 tokens.
 
-The latent runs regenerate the same deterministic states and split membership
-with `agent_name=latent_grpo_agent_loop`. Only this routing metadata differs
-from the validity dataset. A distinct name is required because overriding the
-generic `causal_micro_lab_agent_loop` can produce mixed agent classes across
-veRL validation workers.
+Dataset rows keep their generic `causal_micro_lab_agent_loop` name. The
+latent run's agent configuration maps that name to `LatentGRPOAgentLoop` in
+each worker's local registry. Validity, IPS, and latent jobs can therefore read
+the same immutable files concurrently without rewriting routing metadata.
 
 After merging a checkpoint to Hugging Face format, run the matched latent
 evaluation with:
@@ -167,10 +166,9 @@ A mixed base/IPS batch fails with errors such as:
 KeyError: 'reward_syntax_valid'
 ```
 
-This previously affected both IPS-GRPO and latent IPS-GRPO. Latent runs avoid
-the shared-name routing failure by using `latent_grpo_agent_loop` explicitly
-and normalizing their reward extras in the rollout class before veRL batches
-them.
+This previously affected both IPS-GRPO and latent IPS-GRPO. Latent runs map
+the dataset's generic agent name to one implementation for the whole worker
+and normalize reward extras in that rollout class before veRL batches them.
 
 ## Design history
 

@@ -39,23 +39,30 @@ class LatentAgentLoopTests(unittest.TestCase):
             config = yaml.safe_load(
                 (config_dir / filename).read_text(encoding="utf-8")
             )
-            self.assertEqual(
-                config["causal_micro_lab_agent_name"],
-                "latent_grpo_agent_loop",
-            )
+            self.assertNotIn("causal_micro_lab_agent_name", config)
             self.assertEqual(config["default_agent_loop"], "latent_grpo_agent_loop")
             self.assertEqual(
                 config["agent_loop_config_path"],
                 "configs/verl/latent_grpo_agent_loop.yaml",
             )
+            self.assertEqual(
+                config["causal_micro_lab_dataset_output_dir"],
+                "data/causal_micro_lab/trainable",
+            )
+            self.assertTrue(
+                config["train_file"].startswith("data/causal_micro_lab/trainable/")
+            )
 
-    def test_agent_config_has_no_generic_alias(self):
+    def test_agent_config_maps_generic_and_explicit_names(self):
         entries = yaml.safe_load(
             (ROOT / "configs" / "verl" / "latent_grpo_agent_loop.yaml").read_text(
                 encoding="utf-8"
             )
         )
-        self.assertEqual([entry["name"] for entry in entries], ["latent_grpo_agent_loop"])
+        self.assertEqual(
+            [entry["name"] for entry in entries],
+            ["causal_micro_lab_agent_loop", "latent_grpo_agent_loop"],
+        )
 
     def test_slurm_launcher_runs_latent_preflight(self):
         launcher = (

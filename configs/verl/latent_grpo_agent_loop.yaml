@@ -1,5 +1,7 @@
-# Use a distinct agent name instead of overriding causal_micro_lab_agent_loop.
-# This prevents validation workers from mixing the base environment's metric
-# schema with the latent trainer's fixed reward-extra schema.
+# Dataset rows remain immutable and use causal_micro_lab_agent_loop. This
+# run-local registry maps those rows to the latent implementation in memory.
+- name: causal_micro_lab_agent_loop
+  _target_: scattered_discovery.verl.latent_agent_loop.LatentGRPOAgentLoop
+
 - name: latent_grpo_agent_loop
   _target_: scattered_discovery.verl.latent_agent_loop.LatentGRPOAgentLoop

@@ -19,6 +19,10 @@ def main() -> None:
     )
     assert entries == [
         {
+            "name": "causal_micro_lab_agent_loop",
+            "_target_": expected_target,
+        },
+        {
             "name": "latent_grpo_agent_loop",
             "_target_": expected_target,
         }
@@ -39,7 +43,7 @@ def main() -> None:
     assert sparse["reward_syntax_valid"] == 0.0
 
     print(
-        "latent GRPO preflight OK: explicit agent routing and fixed "
+        "latent GRPO preflight OK: run-local agent routing and fixed "
         f"{len(LATENT_REWARD_EXTRA_DEFAULTS)}-field reward schema"
     )
 
