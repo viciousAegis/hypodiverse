@@ -116,6 +116,12 @@ Both use the same `data/causal_micro_lab/trainable` split as validity GRPO,
 Qwen3-4B, two GPUs, 16 states per update, eight rollouts per state, a 6000-token
 response cap, and length shaping beginning at 3072 tokens.
 
+The latent runs regenerate the same deterministic states and split membership
+with `agent_name=latent_grpo_agent_loop`. Only this routing metadata differs
+from the validity dataset. A distinct name is required because overriding the
+generic `causal_micro_lab_agent_loop` can produce mixed agent classes across
+veRL validation workers.
+
 After merging a checkpoint to Hugging Face format, run the matched latent
 evaluation with:
 
@@ -149,6 +155,22 @@ W&B receives:
 
 The central success criterion is not a large specificity score by itself. It is
 higher canonical mode coverage at matched validity and evaluation budget.
+
+## Known veRL integration invariant
+
+veRL's non-TQ validation postprocessor derives `reward_extra_info` keys from
+the first rollout and indexes every later rollout with that schema. Every
+rollout class in one batch must therefore return exactly the same scalar keys.
+A mixed base/IPS batch fails with errors such as:
+
+```text
+KeyError: 'reward_syntax_valid'
+```
+
+This previously affected both IPS-GRPO and latent IPS-GRPO. Latent runs avoid
+the shared-name routing failure by using `latent_grpo_agent_loop` explicitly
+and normalizing their reward extras in the rollout class before veRL batches
+them.
 
 ## Design history
 

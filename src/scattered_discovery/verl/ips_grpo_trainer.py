@@ -52,13 +52,57 @@ def normalize_ips_reward_extra_info(
 
 
 try:
+    from verl.experimental.agent_loop.agent_loop import (
+        AgentLoopManager as _AgentLoopManager,
+        AgentLoopWorker as _AgentLoopWorker,
+    )
     from verl.trainer.ppo.v1.agent_loop_tq import (
         AgentLoopManagerTQ as _AgentLoopManagerTQ,
         AgentLoopWorkerTQ as _AgentLoopWorkerTQ,
     )
 except ImportError:  # Keep local tests importable without veRL.
+    _AgentLoopManager = None
+    _AgentLoopWorker = None
     _AgentLoopManagerTQ = None
     _AgentLoopWorkerTQ = None
+
+
+if _AgentLoopWorker is not None and _AgentLoopManager is not None:
+    import ray
+
+    @ray.remote
+    class IPSGRPOAgentLoopWorker(_AgentLoopWorker):
+        def _postprocess(
+            self,
+            inputs: list[Any],
+            input_non_tensor_batch: dict[str, Any] | None = None,
+            validate: bool = False,
+        ) -> Any:
+            for item in inputs:
+                item.extra_fields["reward_extra_info"] = (
+                    normalize_ips_reward_extra_info(
+                        item.extra_fields.get("reward_extra_info"),
+                        reward_score=getattr(item, "reward_score", 0.0),
+                    )
+                )
+            return super()._postprocess(
+                inputs,
+                input_non_tensor_batch=input_non_tensor_batch,
+                validate=validate,
+            )
+
+
+    class IPSGRPOAgentLoopManager(_AgentLoopManager):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.agent_loop_workers_class = IPSGRPOAgentLoopWorker
+            super().__init__(*args, **kwargs)
+
+else:
+
+    class IPSGRPOAgentLoopManager:
+        @classmethod
+        def create(cls, *_args: Any, **_kwargs: Any) -> Any:
+            raise RuntimeError("IPSGRPOAgentLoopManager requires veRL.")
 
 
 if _AgentLoopWorkerTQ is not None and _AgentLoopManagerTQ is not None:

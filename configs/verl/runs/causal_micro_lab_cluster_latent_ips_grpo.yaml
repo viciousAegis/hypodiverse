@@ -10,6 +10,7 @@ causal_micro_lab_rebuild_dataset: 0
 causal_micro_lab_dataset_preset: trainable
 causal_micro_lab_dataset_output_dir: data/causal_micro_lab/trainable
 causal_micro_lab_dataset_seed: 1
+causal_micro_lab_agent_name: latent_grpo_agent_loop
 causal_micro_lab_target_counts: 4,8,16
 causal_micro_lab_val_states_per_count: 43
 causal_micro_lab_test_states_per_count: 43
@@ -45,8 +46,8 @@ model_basename: Qwen3-4B
 download_model: 1
 attn_implementation: sdpa
 use_remove_padding: "False"
-agent_loop_config_path: configs/verl/ips_grpo_agent_loop.yaml
-default_agent_loop: causal_micro_lab_agent_loop
+agent_loop_config_path: configs/verl/latent_grpo_agent_loop.yaml
+default_agent_loop: latent_grpo_agent_loop
 
 train_file: data/causal_micro_lab/trainable/verl_train.jsonl
 val_file: data/causal_micro_lab/trainable/verl_val.jsonl

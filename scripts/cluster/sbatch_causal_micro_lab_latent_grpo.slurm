@@ -62,6 +62,7 @@ source "$VENV_DIR/bin/activate"
 # shellcheck disable=SC1091
 source scripts/cluster/prepend_venv_cuda_libs.sh
 python scripts/cluster/check_ips_grpo_verl.py --latent
+python scripts/cluster/check_latent_grpo.py
 
 if [[ -z "${WANDB_API_KEY:-}" ]]; then
   echo "WANDB_API_KEY was not loaded from $REPO_DIR/.env" >&2

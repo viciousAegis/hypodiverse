@@ -25,7 +25,10 @@ def main() -> None:
     )
     from scattered_discovery.verl.ips_grpo_trainer import (
         IPS_REWARD_EXTRA_DEFAULTS,
+        IPSGRPOAgentLoopManager,
         IPSGRPOAgentLoopManagerTQ,
+        IPSGRPOAgentLoopWorker,
+        IPSGRPOAgentLoopWorkerTQ,
         IPSGRPOTrainerMixin,
         build_ips_task_runner,
         compute_ips_grpo_advantages,
@@ -35,7 +38,16 @@ def main() -> None:
 
     assert IPSGRPOAgentLoop is not None
     assert IPSGRPOTrainerMixin is not None
+    assert IPSGRPOAgentLoopManager is not None
     assert IPSGRPOAgentLoopManagerTQ is not None
+    assert (
+        "_postprocess"
+        in IPSGRPOAgentLoopWorker.__ray_metadata__.modified_class.__dict__
+    )
+    assert (
+        "_agent_loop_postprocess"
+        in IPSGRPOAgentLoopWorkerTQ.__ray_metadata__.modified_class.__dict__
+    )
     assert callable(build_ips_task_runner)
     complete = normalize_ips_reward_extra_info(
         {

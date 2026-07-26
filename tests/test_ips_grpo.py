@@ -370,6 +370,17 @@ class IPSGRPOTests(unittest.TestCase):
         self.assertIn("causal_micro_lab_cluster_ips_grpo.yaml", slurm)
         self.assertIn('if [[ -z "${WANDB_API_KEY:-}" ]]', slurm)
 
+    def test_ips_launcher_wires_validation_postprocess_manager(self):
+        launcher = (
+            ROOT / "scripts" / "cluster" / "run_verl_discovery_grpo.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "agent_loop_manager_class="
+            "scattered_discovery.verl.ips_grpo_trainer."
+            "IPSGRPOAgentLoopManager",
+            launcher,
+        )
+
     def test_latent_slurm_launcher_has_both_variants(self):
         slurm = (
             ROOT / "scripts" / "cluster" / "sbatch_causal_micro_lab_latent_grpo.slurm"

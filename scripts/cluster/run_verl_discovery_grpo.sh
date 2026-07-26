@@ -241,6 +241,7 @@ fi
 IPS_GRPO=()
 if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.ips_grpo_main" ]]; then
   IPS_GRPO=(
+    +actor_rollout_ref.rollout.agent.agent_loop_manager_class=scattered_discovery.verl.ips_grpo_trainer.IPSGRPOAgentLoopManager
     +algorithm.ips_grpo.epsilon="${IPS_GRPO_EPSILON:-0.2}"
     +algorithm.ips_grpo.probe_fraction="${IPS_GRPO_PROBE_FRACTION:-1.0}"
     +algorithm.ips_grpo.length_penalty_start="${IPS_GRPO_LENGTH_PENALTY_START:-3072}"
