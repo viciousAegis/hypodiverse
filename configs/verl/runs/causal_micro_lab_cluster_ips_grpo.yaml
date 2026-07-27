@@ -63,7 +63,7 @@ temperature: 1.0
 top_p: 1.0
 total_epochs: 1
 total_training_steps: 100
-save_freq: 10
+save_freq: 5
 test_freq: 10
 max_actor_ckpt_to_keep: 1
 max_critic_ckpt_to_keep: 1
