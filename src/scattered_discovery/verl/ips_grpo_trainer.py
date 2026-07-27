@@ -1095,11 +1095,20 @@ def build_ips_task_runner() -> Any:
             import transfer_queue as tq
             from verl.trainer.ppo.v1 import get_trainer_cls
 
+            if not bool(config.trainer.use_v1):
+                raise RuntimeError(
+                    "IPSGRPOTaskRunner requires trainer.use_v1=True"
+                )
             base_cls = get_trainer_cls(config.trainer.v1.trainer_mode)
             trainer_cls = type(
                 f"IPSGRPO{base_cls.__name__}",
                 (IPSGRPOTrainerMixin, base_cls),
                 {},
+            )
+            print(
+                "IPSGRPO_CUSTOM_TASK_RUNNER_ACTIVE=1 "
+                f"trainer_class={trainer_cls.__name__}",
+                flush=True,
             )
             config.transfer_queue.enable = True
             self.config = config

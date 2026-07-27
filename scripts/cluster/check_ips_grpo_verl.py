@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import inspect
+from pathlib import Path
+
+import yaml
 
 
 def main() -> None:
@@ -11,7 +14,23 @@ def main() -> None:
         action="store_true",
         help="also check the latent counterfactual-scoring path",
     )
+    parser.add_argument(
+        "--run-config",
+        help="require a corrected run config with trainer_use_v1: true",
+    )
     args = parser.parse_args()
+
+    if args.run_config:
+        run_config = yaml.safe_load(
+            Path(args.run_config).read_text(encoding="utf-8")
+        )
+        assert run_config.get("trainer_use_v1") is True, (
+            f"{args.run_config} must set trainer_use_v1: true"
+        )
+        assert (
+            run_config.get("trainer_entrypoint")
+            == "scattered_discovery.verl.ips_grpo_main"
+        )
 
     import torch
     import transfer_queue
@@ -141,7 +160,7 @@ def main() -> None:
         )
         assert latent_advantages[2, 0] > latent_advantages[0, 0]
         assert latent_metrics["latent_ips/weight_max"] > 1.0
-    print("IPS-GRPO veRL imports ok")
+    print("IPS-GRPO veRL imports and v1 selection ok")
 
 
 if __name__ == "__main__":

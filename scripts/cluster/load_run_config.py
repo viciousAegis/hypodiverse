@@ -46,6 +46,7 @@ KEY_MAP = {
     "default_agent_loop": "DEFAULT_AGENT_LOOP",
     "agent_loop_config_path": "AGENT_LOOP_CONFIG_PATH",
     "trainer_entrypoint": "TRAINER_ENTRYPOINT",
+    "trainer_use_v1": "TRAINER_USE_V1",
     "total_training_steps": "TOTAL_TRAINING_STEPS",
     "causal_micro_lab_agent_name": "CML_AGENT_NAME",
     "causal_micro_lab_generate_dataset_if_missing": "CML_GENERATE_DATASET_IF_MISSING",

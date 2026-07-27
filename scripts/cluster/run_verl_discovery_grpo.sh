@@ -221,6 +221,9 @@ TRAINER=(
 if [[ -n "${TOTAL_TRAINING_STEPS:-}" ]]; then
   TRAINER+=(trainer.total_training_steps="${TOTAL_TRAINING_STEPS}")
 fi
+if [[ -n "${TRAINER_USE_V1:-}" ]]; then
+  TRAINER+=(trainer.use_v1="${TRAINER_USE_V1}")
+fi
 
 CD_GRPO=()
 if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
