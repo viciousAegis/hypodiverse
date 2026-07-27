@@ -1,8 +1,17 @@
 from __future__ import annotations
 
 import random
+import sys
+import tempfile
+import types
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
+from scattered_discovery.envs.causal_micro_lab.eval import (
+    _bootstrap_metric_name,
+    _log_wandb_bootstrap_report,
+)
 from scattered_discovery.envs.causal_micro_lab.report import (
     _aggregate_primary_rows,
     _bootstrap_grouped_rows,
@@ -98,6 +107,100 @@ class CausalMicroLabReportTests(unittest.TestCase):
         self.assertEqual(coverage_row["mean"], 0.375)
         self.assertLessEqual(coverage_row["ci95_low"], 0.375)
         self.assertGreaterEqual(coverage_row["ci95_high"], 0.375)
+
+    def test_bootstrap_metric_name_includes_slice_labels(self) -> None:
+        name = _bootstrap_metric_name(
+            {
+                "slice": "by_k_separation",
+                "K": "16",
+                "M": "",
+                "separation_bucket": "high",
+                "family_bucket": "",
+                "metric": "modes_recovered_given_success",
+            }
+        )
+        self.assertEqual(
+            name,
+            (
+                "bootstrap_ci95/by_k_separation/K_16/"
+                "separation_bucket_high/modes_recovered_given_success"
+            ),
+        )
+
+    def test_wandb_report_logs_tables_scalars_and_artifact(self) -> None:
+        header = (
+            "slice,K,M,separation_bucket,family_bucket,metric,conditioning,"
+            "support_states,successful_states,mean,ci95_low,ci95_high,"
+            "bootstrap_samples\n"
+        )
+        row = (
+            "by_k_m,16,4,,,pass_at_k,all_states,"
+            "24,20,0.8,0.6,0.9,1000\n"
+        )
+
+        class FakeTable:
+            def __init__(self, *, columns, data):
+                self.columns = columns
+                self.data = data
+
+        class FakeArtifact:
+            def __init__(self, *, name, type, metadata):
+                self.name = name
+                self.type = type
+                self.metadata = metadata
+                self.directories = []
+
+            def add_dir(self, path):
+                self.directories.append(path)
+
+        class FakeRun:
+            id = "run123"
+
+            def __init__(self):
+                self.logged = []
+                self.artifacts = []
+
+            def log(self, values):
+                self.logged.append(values)
+
+            def log_artifact(self, artifact):
+                self.artifacts.append(artifact)
+
+        fake_wandb = types.SimpleNamespace(
+            Table=FakeTable,
+            Artifact=FakeArtifact,
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            report_dir = Path(temporary)
+            for filename in (
+                "bootstrap_ci95.csv",
+                "primary_bootstrap_ci95_by_k_m.csv",
+                "primary_bootstrap_ci95_by_k_separation.csv",
+                "primary_bootstrap_ci95_by_k_family.csv",
+            ):
+                (report_dir / filename).write_text(
+                    header + row,
+                    encoding="utf-8",
+                )
+            run = FakeRun()
+            with patch.dict(sys.modules, {"wandb": fake_wandb}):
+                _log_wandb_bootstrap_report(
+                    run,
+                    report_dir=report_dir,
+                    bootstrap_samples=1000,
+                )
+
+        self.assertEqual(len(run.logged), 2)
+        self.assertIn("eval_tables/bootstrap_ci95", run.logged[0])
+        self.assertEqual(
+            run.logged[1][
+                "bootstrap_ci95/by_k_m/K_16/M_4/pass_at_k/ci95_low"
+            ],
+            0.6,
+        )
+        self.assertEqual(len(run.artifacts), 1)
+        self.assertEqual(run.artifacts[0].type, "evaluation-report")
+        self.assertEqual(run.artifacts[0].metadata["bootstrap_samples"], 1000)
 
 
 if __name__ == "__main__":

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
+import re
 import statistics
 import time
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -191,6 +193,104 @@ def _log_wandb_set_plots(
                 )
             }
         )
+
+
+def _coerce_csv_value(value: str) -> str | int | float | None:
+    if value == "":
+        return None
+    if re.fullmatch(r"-?\d+", value):
+        return int(value)
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+def _read_csv_table(path: Path) -> tuple[list[str], list[list[Any]]]:
+    with path.open(encoding="utf-8", newline="") as handle:
+        reader = csv.DictReader(handle)
+        columns = list(reader.fieldnames or [])
+        rows = [
+            [_coerce_csv_value(row.get(column, "")) for column in columns]
+            for row in reader
+        ]
+    return columns, rows
+
+
+def _bootstrap_metric_name(row: dict[str, str]) -> str:
+    labels = []
+    for key in ("K", "M", "separation_bucket", "family_bucket"):
+        value = row.get(key)
+        if value:
+            safe_value = re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+            labels.append(f"{key}_{safe_value}")
+    label_path = "/".join(labels)
+    metric = re.sub(r"[^A-Za-z0-9_.-]+", "_", row["metric"])
+    return "/".join(
+        part
+        for part in ("bootstrap_ci95", row["slice"], label_path, metric)
+        if part
+    )
+
+
+def _log_wandb_bootstrap_report(
+    wandb_run: Any,
+    *,
+    report_dir: Path,
+    bootstrap_samples: int,
+) -> None:
+    import wandb
+
+    table_files = (
+        "bootstrap_ci95.csv",
+        "primary_bootstrap_ci95_by_k_m.csv",
+        "primary_bootstrap_ci95_by_k_separation.csv",
+        "primary_bootstrap_ci95_by_k_family.csv",
+    )
+    tables: dict[str, Any] = {}
+    for filename in table_files:
+        path = report_dir / filename
+        columns, rows = _read_csv_table(path)
+        tables[f"eval_tables/{path.stem}"] = wandb.Table(
+            columns=columns,
+            data=rows,
+        )
+    wandb_run.log(tables)
+
+    primary_metrics = {
+        "pass_at_k",
+        "modes_recovered_given_success",
+        "fraction_modes_recovered_given_success",
+    }
+    scalar_metrics: dict[str, float | int] = {}
+    bootstrap_path = report_dir / "bootstrap_ci95.csv"
+    with bootstrap_path.open(encoding="utf-8", newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row["metric"] not in primary_metrics:
+                continue
+            prefix = _bootstrap_metric_name(row)
+            for key in (
+                "mean",
+                "ci95_low",
+                "ci95_high",
+                "support_states",
+                "successful_states",
+                "bootstrap_samples",
+            ):
+                scalar_metrics[f"{prefix}/{key}"] = float(row[key])
+    if scalar_metrics:
+        wandb_run.log(scalar_metrics)
+
+    artifact = wandb.Artifact(
+        name=f"causal-micro-lab-eval-report-{wandb_run.id}",
+        type="evaluation-report",
+        metadata={
+            "bootstrap_samples": bootstrap_samples,
+            "contains_per_state_metrics": True,
+        },
+    )
+    artifact.add_dir(str(report_dir))
+    wandb_run.log_artifact(artifact)
 
 
 def load_states(path: str | Path) -> list[EvidenceState]:
@@ -997,6 +1097,25 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
         wandb_run.log(_flatten_numeric(set_summary, prefix="set_summary"))
         if prefix_summaries:
             _log_wandb_set_plots(wandb_run, prefix_summaries)
+    if args.build_report:
+        from scattered_discovery.envs.causal_micro_lab.report import build_report
+
+        report_dir = output_dir / "report"
+        report_ks = tuple(prefix_ks or [args.rollouts_per_state])
+        build_report(
+            episodes_path=episodes_path,
+            states_path=Path(args.input),
+            output_dir=report_dir,
+            ks=report_ks,
+            bootstrap_samples=args.bootstrap_samples,
+        )
+        if wandb_run is not None:
+            _log_wandb_bootstrap_report(
+                wandb_run,
+                report_dir=report_dir,
+                bootstrap_samples=args.bootstrap_samples,
+            )
+    if wandb_run is not None:
         wandb_run.finish()
     return output_dir, summary
 
@@ -1057,6 +1176,14 @@ def main() -> None:
     )
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-run-name")
+    parser.add_argument(
+        "--build-report",
+        action="store_true",
+        help=(
+            "Build per-state CSVs and bootstrap intervals before closing W&B."
+        ),
+    )
+    parser.add_argument("--bootstrap-samples", type=int, default=1000)
     args = parser.parse_args()
     if args.rollouts_per_state < 1:
         raise SystemExit("--rollouts-per-state must be >= 1")
@@ -1068,6 +1195,8 @@ def main() -> None:
         raise SystemExit("--answer-count must be >= 1")
     if args.latent_count < 0:
         raise SystemExit("--latent-count must be >= 0")
+    if args.bootstrap_samples < 1:
+        raise SystemExit("--bootstrap-samples must be >= 1")
     output_dir, summary = run_eval(args)
     print(json.dumps({"output_dir": str(output_dir), "summary": summary}, indent=2))
 
