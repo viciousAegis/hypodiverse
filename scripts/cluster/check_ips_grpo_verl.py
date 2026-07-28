@@ -35,6 +35,10 @@ def main() -> None:
     import torch
     import transfer_queue
     from verl.trainer.ppo.v1.agent_loop_tq import AgentLoopWorkerTQ
+    from verl.utils.tensordict_utils import (
+        get as get_tensordict_field,
+        pop as pop_tensordict_field,
+    )
 
     from scattered_discovery.verl.agent_loop import (
         IPSGRPOAgentLoop,
@@ -68,6 +72,8 @@ def main() -> None:
         in IPSGRPOAgentLoopWorkerTQ.__ray_metadata__.modified_class.__dict__
     )
     assert callable(build_ips_task_runner)
+    assert callable(get_tensordict_field)
+    assert callable(pop_tensordict_field)
     complete = normalize_ips_reward_extra_info(
         {
             "reward_syntax_valid": 0.2,

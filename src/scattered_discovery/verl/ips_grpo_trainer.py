@@ -812,6 +812,7 @@ class IPSGRPOTrainerMixin:
         from tensordict import TensorDict
         import transfer_queue as tq
         from transfer_queue import KVBatchMeta
+        from verl.utils.tensordict_utils import get as get_tensordict_field
         from verl.workers.utils.padding import response_from_nested
 
         fields = ["prompts", "responses", "response_mask", "extra_fields"]
@@ -823,7 +824,7 @@ class IPSGRPOTrainerMixin:
         prompt_rows = list(source["prompts"].unbind())
         response_rows = list(source["responses"].unbind())
         response_mask = source["response_mask"]
-        extra_rows = list(source["extra_fields"])
+        extra_rows = get_tensordict_field(source, "extra_fields", [])
         if not (
             len(prompt_rows) == len(response_rows) == len(extra_rows) == len(batch)
         ):
@@ -979,6 +980,7 @@ class IPSGRPOTrainerMixin:
         from verl.trainer.ppo.rollout_corr_helper import (
             compute_rollout_correction_and_add_to_batch,
         )
+        from verl.utils.tensordict_utils import pop as pop_tensordict_field
         from verl.workers.utils.padding import response_to_nested
 
         fields = [
@@ -999,7 +1001,7 @@ class IPSGRPOTrainerMixin:
             select_fields=fields,
         )
         response_mask_nested = raw["response_mask"]
-        extra_fields = list(raw.pop("extra_fields"))
+        extra_fields = pop_tensordict_field(raw, "extra_fields", [])
         tags = list(batch.tags)
         real_indices, ips_metadata = select_ips_metadata(extra_fields, tags)
         data = DataProto(batch=raw.to_padded_tensor())

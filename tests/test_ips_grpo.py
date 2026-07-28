@@ -320,6 +320,29 @@ class IPSGRPOTests(unittest.TestCase):
         self.assertEqual(real_indices, [0])
         self.assertEqual(metadata[0]["behavior"], (12, 34))
 
+    def test_metadata_selection_accepts_unwrapped_non_tensor_rows(self):
+        # verl.utils.tensordict_utils.get/pop returns this Python-native shape
+        # for a NonTensorStack containing rollout extra_fields.
+        unwrapped_rows = [
+            {
+                "reward_extra_info": {
+                    "validity": 1.0,
+                    "reward_valid_hypothesis": 1.0,
+                    "ips_behavior_hash_hi": 12.0,
+                    "ips_behavior_hash_lo": 34.0,
+                },
+                "latent_negative_prompt_ids": [101, 102],
+            }
+        ]
+
+        real_indices, metadata = select_ips_metadata(
+            unwrapped_rows,
+            [{"is_padding": False}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(metadata[0]["behavior"], (12, 34))
+
     def test_merge_ips_output_extra_fields_survives_input_collision(self):
         generated = {
             "reward_extra_info": {
