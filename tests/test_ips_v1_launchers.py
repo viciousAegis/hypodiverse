@@ -66,6 +66,21 @@ class IPSV1LauncherTests(unittest.TestCase):
             self.assertEqual(len(command), 1)
             self.assertTrue(command[0].endswith('"$@" trainer.use_v1=True'))
 
+    def test_tq_worker_forces_method_specific_agent_loop(self):
+        trainer_source = (
+            ROOT
+            / "src"
+            / "scattered_discovery"
+            / "verl"
+            / "ips_grpo_trainer.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            'kwargs["agent_name"] = self.ips_agent_loop_name',
+            trainer_source,
+        )
+        self.assertIn('"latent_grpo_agent_loop"', trainer_source)
+        self.assertIn('"ips_grpo_agent_loop"', trainer_source)
+
 
 if __name__ == "__main__":
     unittest.main()

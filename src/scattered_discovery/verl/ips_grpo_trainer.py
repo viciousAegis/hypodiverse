@@ -138,6 +138,26 @@ if _AgentLoopWorkerTQ is not None and _AgentLoopManagerTQ is not None:
 
     @ray.remote
     class IPSGRPOAgentLoopWorkerTQ(_AgentLoopWorkerTQ.__ray_metadata__.modified_class):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            method_config = self.config.algorithm.get("ips_grpo", {})
+            self.ips_agent_loop_name = (
+                "latent_grpo_agent_loop"
+                if bool(method_config.get("latent_enabled", False))
+                else "ips_grpo_agent_loop"
+            )
+            print(
+                "IPS_AGENT_LOOP_SELECTION_ACTIVE=1 "
+                f"agent_loop={self.ips_agent_loop_name}",
+                flush=True,
+            )
+
+        async def _run_agent_loop(self, *args: Any, **kwargs: Any) -> Any:
+            # Shared dataset rows carry causal_micro_lab_agent_loop. Select the
+            # method loop explicitly instead of relying on name remapping.
+            kwargs["agent_name"] = self.ips_agent_loop_name
+            return await super()._run_agent_loop(*args, **kwargs)
+
         async def _agent_loop_postprocess(
             self,
             output: Any,

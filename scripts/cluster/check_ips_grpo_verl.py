@@ -71,6 +71,14 @@ def main() -> None:
         "_agent_loop_postprocess"
         in IPSGRPOAgentLoopWorkerTQ.__ray_metadata__.modified_class.__dict__
     )
+    worker_tq_source = inspect.getsource(
+        IPSGRPOAgentLoopWorkerTQ.__ray_metadata__.modified_class
+    )
+    assert 'kwargs["agent_name"] = self.ips_agent_loop_name' in worker_tq_source
+    expected_agent_loop = (
+        "latent_grpo_agent_loop" if args.latent else "ips_grpo_agent_loop"
+    )
+    assert expected_agent_loop in worker_tq_source
     assert callable(build_ips_task_runner)
     assert callable(get_tensordict_field)
     assert callable(pop_tensordict_field)
