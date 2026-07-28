@@ -806,4 +806,5 @@ class IPSGRPOAgentLoop(CDGRPOAgentLoop):  # type: ignore[misc]
             reward_extra_info,
             reward_score=output.reward_score,
         )
+        output.extra_fields.update(output.extra_fields["reward_extra_info"])
         return output

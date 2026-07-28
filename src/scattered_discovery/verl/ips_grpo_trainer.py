@@ -51,6 +51,23 @@ def normalize_ips_reward_extra_info(
     return {key: float(source.get(key, default)) for key, default in defaults.items()}
 
 
+def merge_ips_output_extra_fields(
+    generated: dict[str, Any],
+    input_extra_fields: Any,
+) -> dict[str, Any]:
+    """Preserve generated rollout metadata across veRL's kwargs overwrite."""
+    merged = dict(input_extra_fields) if isinstance(input_extra_fields, dict) else {}
+    merged.update(generated)
+    reward_info = normalize_ips_reward_extra_info(
+        merged.get("reward_extra_info"),
+    )
+    merged["reward_extra_info"] = reward_info
+    # Some TransferQueue/TensorDict versions flatten or discard nested mappings.
+    # Mirror the scalar contract so advantage computation has a stable fallback.
+    merged.update(reward_info)
+    return merged
+
+
 def finish_trainer_wandb(trainer: Any, *, exit_code: int) -> None:
     """Flush W&B before Ray tears down the task-runner process."""
     tracking = getattr(trainer, "logger", None)
@@ -128,10 +145,14 @@ if _AgentLoopWorkerTQ is not None and _AgentLoopManagerTQ is not None:
             **kwargs: Any,
         ) -> None:
             input_extra_fields = kwargs.pop("extra_fields", None)
-            if isinstance(input_extra_fields, dict):
-                merged = dict(input_extra_fields)
-                merged.update(output.extra_fields)
-                output.extra_fields = merged
+            output.extra_fields = merge_ips_output_extra_fields(
+                output.extra_fields,
+                input_extra_fields,
+            )
+            # AgentLoopWorkerTQ calls field.update(kwargs). Supplying the same
+            # merged value makes this safe even if that veRL version expects an
+            # input `extra_fields` key instead of allowing it to be removed.
+            kwargs["extra_fields"] = output.extra_fields
             # veRL derives the batch schema from the first rollout and indexes
             # every later rollout with those keys. Normalize failure/padding
             # paths before that unguarded batch assembly.
@@ -234,20 +255,26 @@ def select_ips_metadata(
             continue
         reward_info = item.get("reward_extra_info", {})
         if not isinstance(reward_info, dict):
-            raise TypeError(
-                f"reward_extra_info at rollout index {index} must be a mapping"
-            )
+            reward_info = {}
         required = {
             "validity",
             "reward_valid_hypothesis",
             "ips_behavior_hash_hi",
             "ips_behavior_hash_lo",
         }
-        missing = sorted(required - set(reward_info))
+        # TransferQueue versions differ in whether nested dictionaries survive
+        # TensorDict conversion. Prefer reward_extra_info, then mirrored scalars.
+        reward_info = {
+            key: reward_info[key] if key in reward_info else item.get(key)
+            for key in required | set(IPS_REWARD_EXTRA_DEFAULTS)
+            if key in reward_info or key in item
+        }
+        missing = sorted(key for key in required if reward_info.get(key) is None)
         if missing:
             raise KeyError(
                 f"real rollout at index {index} is missing IPS metadata: "
                 + ", ".join(missing)
+                + f"; available extra_fields keys: {sorted(item)}"
             )
 
         valid = _as_float(reward_info["validity"], field="validity", index=index) > 0

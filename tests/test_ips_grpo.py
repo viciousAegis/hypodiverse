@@ -21,6 +21,7 @@ from scattered_discovery.verl.ips_grpo_trainer import (
     compute_latent_ips_grpo_advantages,
     finish_trainer_wandb,
     normalize_ips_reward_extra_info,
+    merge_ips_output_extra_fields,
     sanitize_validation_reward_extras,
     select_ips_metadata,
 )
@@ -267,6 +268,45 @@ class IPSGRPOTests(unittest.TestCase):
 
         self.assertEqual(real_indices, [0])
         self.assertEqual(metadata[0]["behavior"], (12, 34))
+
+    def test_metadata_selection_falls_back_to_mirrored_scalar_fields(self):
+        extra_fields = [
+            {
+                "validity": 1.0,
+                "reward_valid_hypothesis": 1.0,
+                "ips_behavior_hash_hi": 12.0,
+                "ips_behavior_hash_lo": 34.0,
+            }
+        ]
+
+        real_indices, metadata = select_ips_metadata(
+            extra_fields,
+            [{"is_padding": False}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(metadata[0]["behavior"], (12, 34))
+
+    def test_merge_ips_output_extra_fields_survives_input_collision(self):
+        generated = {
+            "reward_extra_info": {
+                "validity": 1.0,
+                "reward_valid_hypothesis": 1.0,
+                "ips_behavior_hash_hi": 12.0,
+                "ips_behavior_hash_lo": 34.0,
+            },
+            "transcript": [{"role": "assistant", "content": "answer"}],
+        }
+
+        merged = merge_ips_output_extra_fields(
+            generated,
+            {"dataset_private_field": "preserved", "reward_extra_info": {}},
+        )
+
+        self.assertEqual(merged["dataset_private_field"], "preserved")
+        self.assertEqual(merged["reward_extra_info"]["validity"], 1.0)
+        self.assertEqual(merged["validity"], 1.0)
+        self.assertEqual(merged["ips_behavior_hash_hi"], 12.0)
 
     def test_validation_sanitizer_removes_behavior_identifiers(self):
         sanitized, missing = sanitize_validation_reward_extras(
