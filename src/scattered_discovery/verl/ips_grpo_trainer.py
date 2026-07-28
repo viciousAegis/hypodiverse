@@ -211,6 +211,30 @@ def _as_int_list(value: Any, *, field: str, index: int) -> list[int]:
         ) from error
 
 
+_MISSING = object()
+
+
+def _field_get(value: Any, key: str, default: Any = None) -> Any:
+    """Read mapping-like fields without invoking TensorClass sequence indexing."""
+    getter = getattr(value, "get", None)
+    if not callable(getter):
+        return default
+    try:
+        return getter(key, default)
+    except (KeyError, RuntimeError, TypeError):
+        return default
+
+
+def _field_keys(value: Any) -> list[str]:
+    keys = getattr(value, "keys", None)
+    if not callable(keys):
+        return []
+    try:
+        return sorted(str(key) for key in keys())
+    except (RuntimeError, TypeError):
+        return []
+
+
 def scatter_real_rows(
     template: Any,
     real_index_tensor: Any,
@@ -253,7 +277,7 @@ def select_ips_metadata(
     for index, (item, tag) in enumerate(zip(extra_fields, tags, strict=True)):
         if bool(tag.get("is_padding", False)):
             continue
-        reward_info = item.get("reward_extra_info", {})
+        reward_info = _field_get(item, "reward_extra_info", {})
         if not isinstance(reward_info, dict):
             reward_info = {}
         required = {
@@ -264,17 +288,20 @@ def select_ips_metadata(
         }
         # TransferQueue versions differ in whether nested dictionaries survive
         # TensorDict conversion. Prefer reward_extra_info, then mirrored scalars.
-        reward_info = {
-            key: reward_info[key] if key in reward_info else item.get(key)
-            for key in required | set(IPS_REWARD_EXTRA_DEFAULTS)
-            if key in reward_info or key in item
-        }
+        normalized_reward_info: dict[str, Any] = {}
+        for key in required | set(IPS_REWARD_EXTRA_DEFAULTS):
+            value = reward_info.get(key, _MISSING)
+            if value is _MISSING:
+                value = _field_get(item, key, _MISSING)
+            if value is not _MISSING:
+                normalized_reward_info[key] = value
+        reward_info = normalized_reward_info
         missing = sorted(key for key in required if reward_info.get(key) is None)
         if missing:
             raise KeyError(
                 f"real rollout at index {index} is missing IPS metadata: "
                 + ", ".join(missing)
-                + f"; available extra_fields keys: {sorted(item)}"
+                + f"; available extra_fields keys: {_field_keys(item)}"
             )
 
         valid = _as_float(reward_info["validity"], field="validity", index=index) > 0

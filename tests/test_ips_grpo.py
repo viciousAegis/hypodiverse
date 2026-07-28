@@ -287,6 +287,39 @@ class IPSGRPOTests(unittest.TestCase):
         self.assertEqual(real_indices, [0])
         self.assertEqual(metadata[0]["behavior"], (12, 34))
 
+    def test_metadata_selection_does_not_use_tensorclass_membership(self):
+        class TensorClassLike:
+            def __init__(self, values):
+                self.values = values
+
+            def get(self, key, default=None):
+                return self.values.get(key, default)
+
+            def keys(self):
+                return self.values.keys()
+
+            def __getitem__(self, index):
+                raise RuntimeError(f"unexpected positional indexing: {index}")
+
+        extra_fields = [
+            TensorClassLike(
+                {
+                    "validity": 1.0,
+                    "reward_valid_hypothesis": 1.0,
+                    "ips_behavior_hash_hi": 12.0,
+                    "ips_behavior_hash_lo": 34.0,
+                }
+            )
+        ]
+
+        real_indices, metadata = select_ips_metadata(
+            extra_fields,
+            [{"is_padding": False}],
+        )
+
+        self.assertEqual(real_indices, [0])
+        self.assertEqual(metadata[0]["behavior"], (12, 34))
+
     def test_merge_ips_output_extra_fields_survives_input_collision(self):
         generated = {
             "reward_extra_info": {
@@ -295,6 +328,7 @@ class IPSGRPOTests(unittest.TestCase):
                 "ips_behavior_hash_hi": 12.0,
                 "ips_behavior_hash_lo": 34.0,
             },
+            "latent_negative_prompt_ids": [101, 102, 103],
             "transcript": [{"role": "assistant", "content": "answer"}],
         }
 
@@ -307,6 +341,7 @@ class IPSGRPOTests(unittest.TestCase):
         self.assertEqual(merged["reward_extra_info"]["validity"], 1.0)
         self.assertEqual(merged["validity"], 1.0)
         self.assertEqual(merged["ips_behavior_hash_hi"], 12.0)
+        self.assertEqual(merged["latent_negative_prompt_ids"], [101, 102, 103])
 
     def test_validation_sanitizer_removes_behavior_identifiers(self):
         sanitized, missing = sanitize_validation_reward_extras(
