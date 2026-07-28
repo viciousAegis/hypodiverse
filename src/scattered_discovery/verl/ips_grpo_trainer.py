@@ -844,17 +844,29 @@ class IPSGRPOTrainerMixin:
         prompt_rows = list(source["prompts"].unbind())
         response_rows = list(source["responses"].unbind())
         response_mask = source["response_mask"]
+        response_mask_rows = list(response_mask.unbind())
         extra_rows = get_tensordict_field(source, "extra_fields", [])
         if not (
-            len(prompt_rows) == len(response_rows) == len(extra_rows) == len(batch)
+            len(prompt_rows)
+            == len(response_rows)
+            == len(response_mask_rows)
+            == len(extra_rows)
+            == len(batch)
         ):
             raise ValueError("counterfactual scorer received misaligned TQ rows")
 
         counterfactual_inputs: list[Any] = []
         counterfactual_positions: list[Any] = []
+        counterfactual_loss_masks: list[Any] = []
         scored_tokens = 0
-        for row_index, (prompt_row, response_row, extra) in enumerate(
-            zip(prompt_rows, response_rows, extra_rows, strict=True)
+        for row_index, (prompt_row, response_row, response_mask_row, extra) in enumerate(
+            zip(
+                prompt_rows,
+                response_rows,
+                response_mask_rows,
+                extra_rows,
+                strict=True,
+            )
         ):
             negative_prompt = (
                 extra.get("latent_negative_prompt_ids")
@@ -874,10 +886,22 @@ class IPSGRPOTrainerMixin:
                     index=row_index,
                 )
             response_ids = [int(item) for item in response_row.tolist()]
+            if len(response_ids) != len(response_mask_row):
+                raise ValueError(
+                    "counterfactual scorer received a response/mask length mismatch"
+                )
             full_ids = negative_prompt_ids + response_ids
             counterfactual_inputs.append(torch.tensor(full_ids, dtype=torch.long))
             counterfactual_positions.append(
                 torch.arange(len(full_ids), dtype=torch.long)
+            )
+            counterfactual_loss_masks.append(
+                torch.cat(
+                    (
+                        response_mask_row.new_zeros(len(negative_prompt_ids)),
+                        response_mask_row,
+                    )
+                )
             )
             scored_tokens += len(full_ids)
 
@@ -887,6 +911,10 @@ class IPSGRPOTrainerMixin:
         )
         nested_positions = torch.nested.as_nested_tensor(
             counterfactual_positions,
+            layout=torch.jagged,
+        )
+        nested_loss_masks = torch.nested.as_nested_tensor(
+            counterfactual_loss_masks,
             layout=torch.jagged,
         )
         shadow_keys = [
@@ -905,6 +933,7 @@ class IPSGRPOTrainerMixin:
             {
                 "input_ids": nested_inputs,
                 "position_ids": nested_positions,
+                "loss_mask": nested_loss_masks,
             },
             batch_size=len(batch),
         )
