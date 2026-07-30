@@ -18,12 +18,16 @@ usage() {
   cat <<'EOF'
 Usage:
   sbatch scripts/cluster/sbatch_causal_micro_lab_verbalized_sampling_eval.slurm \
-    TRAINING_RUN_OR_MODEL [RUN_NAME] [extra evaluator arguments...]
+    TRAINING_RUN_OR_MODEL [K] [RUN_NAME] [extra evaluator arguments...]
 
 Examples:
   # Resolve the latest complete checkpoint, merging it only if necessary.
   sbatch scripts/cluster/sbatch_causal_micro_lab_verbalized_sampling_eval.slurm \
-    causal_micro_lab_cluster_validity_grpo_r1
+    causal_micro_lab_cluster_validity_grpo_r1 4
+
+  # Evaluate K=8 from the same checkpoint.
+  sbatch scripts/cluster/sbatch_causal_micro_lab_verbalized_sampling_eval.slurm \
+    causal_micro_lab_cluster_validity_grpo_r1 8
 
   # Evaluate a Hugging Face base model.
   sbatch scripts/cluster/sbatch_causal_micro_lab_verbalized_sampling_eval.slurm \
@@ -42,6 +46,11 @@ fi
 
 MODEL_SOURCE="$1"
 shift
+VS_K=4
+if [[ "${1:-}" == "4" || "${1:-}" == "8" ]]; then
+  VS_K="$1"
+  shift
+fi
 REQUESTED_RUN_NAME="${1:-}"
 if [[ "$#" -gt 0 ]]; then
   shift
@@ -146,10 +155,10 @@ if [[ -n "$REQUESTED_RUN_NAME" ]]; then
   export RUN_NAME="$REQUESTED_RUN_NAME"
 else
   SAFE_MODEL_LABEL="${MODEL_LABEL//[^A-Za-z0-9_.-]/_}"
-  export RUN_NAME="causal_micro_lab_vs_k4_${SAFE_MODEL_LABEL}"
+  export RUN_NAME="causal_micro_lab_vs_k${VS_K}_${SAFE_MODEL_LABEL}"
 fi
 
-export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_verbalized_sampling_k4.yaml"
+export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_verbalized_sampling_k${VS_K}.yaml"
 export PYTHON_BIN=python
 export SGLANG_PORT="$((20000 + SLURM_JOB_ID % 20000))"
 
@@ -158,6 +167,7 @@ if [[ -n "${TRAINING_RUN:-}" ]]; then
   echo "Checkpoint:   global_step_$STEP"
 fi
 echo "Resolved model: ${MODEL_PATH:-$MODEL_ID}"
+echo "Answer count: $VS_K"
 echo "W&B run:     $RUN_NAME"
 echo "Eval config: $EVAL_CONFIG"
 

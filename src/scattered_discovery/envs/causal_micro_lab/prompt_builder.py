@@ -22,6 +22,11 @@ def build_prompt(
     ] = "single",
     answer_count: int = 1,
 ) -> str:
+    uniform_probability = (
+        f"{1.0 / answer_count:.6f}".rstrip("0").rstrip(".")
+        if answer_count > 0
+        else "0"
+    )
     lines = [
         "Infer one Boolean causal program consistent with the evidence.",
         "",
@@ -73,7 +78,7 @@ def build_prompt(
                 "Z1: AND X1 X2",
                 "Z2: COPY Z1",
                 "Y: XOR X3 Z2",
-                "PROBABILITY: 0.25",
+                f"PROBABILITY: {uniform_probability}",
                 "",
                 f"Continue through ANSWER {answer_count}.",
                 "Return no other final-answer text.",

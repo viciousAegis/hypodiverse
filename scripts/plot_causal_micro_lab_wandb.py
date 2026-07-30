@@ -22,7 +22,7 @@ def _load_env(path: Path) -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip("\"").strip("'"))
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 def _wandb_gql(api_key: str, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -118,7 +118,9 @@ def _points(rows: list[dict[str, Any]], key: str) -> list[tuple[float, float]]:
     return points
 
 
-def _write_superplot(rows: list[dict[str, Any]], run: dict[str, Any], path: Path) -> None:
+def _write_superplot(
+    rows: list[dict[str, Any]], run: dict[str, Any], path: Path
+) -> None:
     panels = [
         (
             "Training Reward",
@@ -154,7 +156,11 @@ def _write_superplot(rows: list[dict[str, Any]], run: dict[str, Any], path: Path
         (
             "Validation",
             [
-                ("val reward", "val-core/causal_micro_lab_val/reward/mean@1", "#dc2626"),
+                (
+                    "val reward",
+                    "val-core/causal_micro_lab_val/reward/mean@1",
+                    "#dc2626",
+                ),
                 (
                     "base reward",
                     "val-aux/causal_micro_lab_val/base_terminal_reward/mean@1",
@@ -176,14 +182,14 @@ def _write_superplot(rows: list[dict[str, Any]], run: dict[str, Any], path: Path
     width, height = 900, 220
     left, right, top, bottom = 60, 20, 26, 42
     html = [
-        "<!doctype html><meta charset=\"utf-8\"><title>W&B CML superplot</title>",
+        '<!doctype html><meta charset="utf-8"><title>W&B CML superplot</title>',
         "<style>body{font-family:system-ui,Arial;margin:24px;color:#111827}"
         "svg{width:100%;max-width:980px;border:1px solid #e5e7eb;margin:12px 0;background:#fff}"
         ".label{font-size:12px;fill:#374151}.title{font-size:15px;font-weight:700}"
         ".legend{font-size:12px}.grid{stroke:#e5e7eb;stroke-width:1}.axis{stroke:#9ca3af;stroke-width:1}"
         ".note{color:#4b5563}</style>",
         f"<h2>{run['displayName']}</h2>",
-        f"<p class=\"note\">State: {run['state']} | Updated: {run['updatedAt']}</p>",
+        f'<p class="note">State: {run["state"]} | Updated: {run["updatedAt"]}</p>',
     ]
     for title, series in panels:
         all_points = [point for _, key, _ in series for point in _points(rows, key)]
@@ -208,26 +214,26 @@ def _write_superplot(rows: list[dict[str, Any]], run: dict[str, Any], path: Path
         def sy(y: float) -> float:
             return top + (ymax - y) / (ymax - ymin) * (height - top - bottom)
 
-        html.append(f"<svg viewBox=\"0 0 {width} {height}\">")
-        html.append(f"<text class=\"title\" x=\"{left}\" y=\"18\">{title}</text>")
+        html.append(f'<svg viewBox="0 0 {width} {height}">')
+        html.append(f'<text class="title" x="{left}" y="18">{title}</text>')
         for idx in range(5):
             y = top + idx * (height - top - bottom) / 4
             val = ymax - idx * (ymax - ymin) / 4
             html.append(
-                f"<line class=\"grid\" x1=\"{left}\" x2=\"{width-right}\" "
-                f"y1=\"{y:.1f}\" y2=\"{y:.1f}\"/>"
-                f"<text class=\"label\" x=\"6\" y=\"{y+4:.1f}\">{val:.3g}</text>"
+                f'<line class="grid" x1="{left}" x2="{width - right}" '
+                f'y1="{y:.1f}" y2="{y:.1f}"/>'
+                f'<text class="label" x="6" y="{y + 4:.1f}">{val:.3g}</text>'
             )
         html.append(
-            f"<line class=\"axis\" x1=\"{left}\" x2=\"{width-right}\" "
-            f"y1=\"{height-bottom}\" y2=\"{height-bottom}\"/>"
-            f"<line class=\"axis\" x1=\"{left}\" x2=\"{left}\" "
-            f"y1=\"{top}\" y2=\"{height-bottom}\"/>"
+            f'<line class="axis" x1="{left}" x2="{width - right}" '
+            f'y1="{height - bottom}" y2="{height - bottom}"/>'
+            f'<line class="axis" x1="{left}" x2="{left}" '
+            f'y1="{top}" y2="{height - bottom}"/>'
         )
         for tick in range(int(xmin), int(xmax) + 1):
             html.append(
-                f"<text class=\"label\" x=\"{sx(tick)-4:.1f}\" "
-                f"y=\"{height-18}\">{tick}</text>"
+                f'<text class="label" x="{sx(tick) - 4:.1f}" '
+                f'y="{height - 18}">{tick}</text>'
             )
         legend_x, legend_y = left, height - 6
         for label, key, color in series:
@@ -239,16 +245,16 @@ def _write_superplot(rows: list[dict[str, Any]], run: dict[str, Any], path: Path
                 for idx, (x, y) in enumerate(pts)
             )
             html.append(
-                f"<path d=\"{path_data}\" fill=\"none\" stroke=\"{color}\" stroke-width=\"2\"/>"
+                f'<path d="{path_data}" fill="none" stroke="{color}" stroke-width="2"/>'
             )
             for x, y in pts:
                 html.append(
-                    f"<circle cx=\"{sx(x):.1f}\" cy=\"{sy(y):.1f}\" r=\"3\" fill=\"{color}\">"
+                    f'<circle cx="{sx(x):.1f}" cy="{sy(y):.1f}" r="3" fill="{color}">'
                     f"<title>{label} step {x:g}: {y:g}</title></circle>"
                 )
             html.append(
-                f"<circle cx=\"{legend_x}\" cy=\"{legend_y-4}\" r=\"4\" fill=\"{color}\"/>"
-                f"<text class=\"legend\" x=\"{legend_x+8}\" y=\"{legend_y}\">{label}</text>"
+                f'<circle cx="{legend_x}" cy="{legend_y - 4}" r="4" fill="{color}"/>'
+                f'<text class="legend" x="{legend_x + 8}" y="{legend_y}">{label}</text>'
             )
             legend_x += 126
         html.append("</svg>")
@@ -272,7 +278,9 @@ def main() -> None:
     run_name = args.run_name or _latest_run(
         api_key, entity=args.entity, project=args.project, pattern=args.pattern
     )
-    run = _run_history(api_key, entity=args.entity, project=args.project, run_name=run_name)
+    run = _run_history(
+        api_key, entity=args.entity, project=args.project, run_name=run_name
+    )
     rows = _history_rows(run)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -282,8 +290,20 @@ def main() -> None:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
     plot_path = output_dir / f"{run_name}_superplot.html"
     _write_superplot(rows, run, plot_path)
-    print(f"run={run_name} display={run['displayName']} state={run['state']} updated={run['updatedAt']}")
+    summary = run.get("summaryMetrics") or {}
+    if isinstance(summary, str):
+        summary = json.loads(summary)
+    summary_path = output_dir / f"{run_name}_summary.json"
+    summary_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    bootstrap_keys = [key for key in summary if str(key).startswith("bootstrap_ci95/")]
+    print(
+        f"run={run_name} display={run['displayName']} state={run['state']} updated={run['updatedAt']}"
+    )
     print(f"history={history_path}")
+    print(f"summary={summary_path} bootstrap_ci_keys={len(bootstrap_keys)}")
     print(f"plot={plot_path}")
 
 

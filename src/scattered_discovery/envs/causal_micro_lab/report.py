@@ -76,6 +76,8 @@ def _state_metric_rows(
     records: list[dict[str, Any]],
     states: list[EvidenceState],
     ks: tuple[int, ...],
+    *,
+    set_answer_count: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     by_state: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for record in records:
@@ -89,10 +91,9 @@ def _state_metric_rows(
             key=lambda record: int(record["rollout_index"]),
         )
         for k in ks:
+            reported_k = set_answer_count if set_answer_count is not None else k
             prefix = [
-                record
-                for record in state_records
-                if int(record["rollout_index"]) < k
+                record for record in state_records if int(record["rollout_index"]) < k
             ]
             results = [
                 result
@@ -101,13 +102,12 @@ def _state_metric_rows(
             ]
             metrics = group_metrics(results, state)
             valid_count = int(
-                metrics["num_unique_valid_modes"]
-                + metrics["duplicate_valid_modes"]
+                metrics["num_unique_valid_modes"] + metrics["duplicate_valid_modes"]
             )
             metrics["valid_mode_rate"] = valid_count / max(1, len(results))
             row: dict[str, Any] = {
                 "state_id": state.state_id,
-                "K": k,
+                "K": reported_k,
                 "M": state.valid_mode_count,
                 "evidence_size": state.evidence_size,
                 "separation_bucket": state.separation_bucket,
@@ -129,7 +129,7 @@ def _state_metric_rows(
                 reachability_rows.append(
                     {
                         "state_id": state.state_id,
-                        "K": k,
+                        "K": reported_k,
                         "M": state.valid_mode_count,
                         "separation_bucket": state.separation_bucket,
                         "state_family_bucket": state.family_bucket,
@@ -201,9 +201,7 @@ def _bootstrap_grouped_rows(
     output = []
     for labels, items in sorted(grouped.items(), key=lambda item: item[0]):
         successes = [item for item in items if float(item["pass_at_k"]) > 0]
-        metric_specs = [
-            (metric, metric, "all_states", items) for metric in METRICS
-        ]
+        metric_specs = [(metric, metric, "all_states", items) for metric in METRICS]
         metric_specs.extend(
             (
                 output_metric,
@@ -218,21 +216,13 @@ def _bootstrap_grouped_rows(
                 continue
             values = [float(item[source_metric]) for item in source_items]
             estimates = [
-                _mean(
-                    [
-                        values[rng.randrange(len(values))]
-                        for _ in range(len(values))
-                    ]
-                )
+                _mean([values[rng.randrange(len(values))] for _ in range(len(values))])
                 for _ in range(samples)
             ]
             estimates.sort()
             result = {
                 "slice": slice_name,
-                **{
-                    key: value
-                    for key, value in zip(group_keys, labels, strict=True)
-                },
+                **{key: value for key, value in zip(group_keys, labels, strict=True)},
                 "metric": output_metric,
                 "conditioning": conditioning,
                 "support_states": len(items),
@@ -309,10 +299,10 @@ def _mode_family_rows(reachability: list[dict[str, Any]]) -> list[dict[str, Any]
                 "separation_bucket": separation,
                 "mode_family": family,
                 "mode_opportunities": len(items),
-                "discovered_opportunities": sum(int(item["discovered"]) for item in items),
-                "discovery_rate": _mean(
-                    [float(item["discovered"]) for item in items]
+                "discovered_opportunities": sum(
+                    int(item["discovered"]) for item in items
                 ),
+                "discovery_rate": _mean([float(item["discovered"]) for item in items]),
                 "mean_generated_count": _mean(
                     [float(item["generated_count"]) for item in items]
                 ),
@@ -344,16 +334,10 @@ def _sample_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
             [float(bool(record.get("fallback_used"))) for record in records]
         ),
         "fallback_output_rate": _mean(
-            [
-                float(bool(record.get("fallback_produced_output")))
-                for record in records
-            ]
+            [float(bool(record.get("fallback_produced_output"))) for record in records]
         ),
         "fallback_error_rate": _mean(
-            [
-                float(bool(record.get("fallback_request_error")))
-                for record in records
-            ]
+            [float(bool(record.get("fallback_request_error"))) for record in records]
         ),
         "initial_tokens_mean": _mean([float(value) for value in initial_tokens]),
         "fallback_tokens_mean_when_used": _mean(
@@ -375,11 +359,17 @@ def build_report(
     output_dir: Path,
     ks: tuple[int, ...],
     bootstrap_samples: int = 1000,
+    set_answer_count: int | None = None,
 ) -> dict[str, Any]:
     records = _read_jsonl(episodes_path)
     states = load_states(states_path)
     output_dir.mkdir(parents=True, exist_ok=True)
-    metric_rows, reachability_rows = _state_metric_rows(records, states, ks)
+    metric_rows, reachability_rows = _state_metric_rows(
+        records,
+        states,
+        ks,
+        set_answer_count=set_answer_count,
+    )
     by_k = _aggregate_rows(metric_rows, ("K",))
     by_k_m = _aggregate_rows(metric_rows, ("K", "M"))
     by_k_separation = _aggregate_rows(metric_rows, ("K", "separation_bucket"))
@@ -404,10 +394,12 @@ def build_report(
     mode_family_rows = _mode_family_rows(reachability_rows)
     sample_summary = _sample_summary(records)
     set_summaries = {
-        str(k): summarize_grouped_records(
-            records,
-            states,
-            max_rollout_index=k,
+        str(set_answer_count if set_answer_count is not None else k): (
+            summarize_grouped_records(
+                records,
+                states,
+                max_rollout_index=k,
+            )
         )
         for k in ks
     }
@@ -416,7 +408,7 @@ def build_report(
         "states_path": str(states_path),
         "states": len(states),
         "episodes": len(records),
-        "Ks": list(ks),
+        "Ks": [set_answer_count if set_answer_count is not None else k for k in ks],
         "Ms": sorted({state.valid_mode_count for state in states}),
         "sample_summary": sample_summary,
         "set_summaries": set_summaries,
@@ -480,9 +472,7 @@ def main() -> None:
     args = parser.parse_args()
     episodes = Path(args.episodes)
     output_dir = (
-        Path(args.output_dir)
-        if args.output_dir
-        else episodes.parent / "report"
+        Path(args.output_dir) if args.output_dir else episodes.parent / "report"
     )
     ks = tuple(int(item) for item in args.ks.split(",") if item.strip())
     summary = build_report(

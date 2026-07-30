@@ -1191,6 +1191,9 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
             output_dir=report_dir,
             ks=report_ks,
             bootstrap_samples=args.bootstrap_samples,
+            set_answer_count=(
+                args.answer_count if args.output_mode in SET_OUTPUT_MODES else None
+            ),
         )
         if wandb_run is not None:
             _log_wandb_bootstrap_report(

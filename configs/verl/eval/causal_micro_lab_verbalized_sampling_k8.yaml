@@ -1,0 +1,36 @@
+# Verbalized Sampling K=8 on the frozen final_v1 evaluation set.
+# The 30k response cap stays within the model context; compare methods using
+# actual generated tokens as well as returned-set size.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 0
+
+model_id: Qwen/Qwen3-4B
+download_model: 1
+eval_file: eval_sets/causal_micro_lab/final_v1/verl_test.jsonl
+output_dir: artifacts/causal_micro_lab_final_eval
+run_name: causal_micro_lab_verbalized_sampling_k8_qwen3_4b
+
+causal_micro_lab_output_mode: verbalized_sampling
+causal_micro_lab_answer_count: 8
+rollouts_per_spec: 1
+prefix_ks: ""
+eval_workers: 16
+max_response_length: 30000
+temperature: 1.0
+top_p: 1.0
+think: true
+thinking_fallback: true
+fallback_max_response_length: 1024
+fallback_temperature: 0.0
+build_eval_report: true
+request_timeout_s: 2400
+transcripts: 0
+wandb_project: scattered-discovery
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.82
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch"

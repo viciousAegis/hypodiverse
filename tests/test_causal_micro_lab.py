@@ -282,6 +282,13 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertIn("Z1: AND X1 X2", prompt)
         self.assertNotIn("<answer", prompt)
         self.assertNotIn("valid_mode_ids", prompt)
+        prompt_k8 = build_prompt(
+            self.state,
+            output_mode="verbalized_sampling",
+            answer_count=8,
+        )
+        self.assertIn("ANSWER 8", prompt_k8)
+        self.assertIn("PROBABILITY: 0.125", prompt_k8)
 
     def test_env_rewards_nonempty_final_output(self):
         env = make_env(

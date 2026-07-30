@@ -7,11 +7,13 @@ from typing import Any
 
 from scattered_discovery.envs.causal_micro_lab.eval import (
     _flatten_numeric,
+    _log_wandb_bootstrap_report,
     _set_verification_to_eval_dict,
     load_states,
     summarize_grouped_records,
     summarize_records,
 )
+from scattered_discovery.envs.causal_micro_lab.report import build_report
 from scattered_discovery.envs.causal_micro_lab.verifier import (
     verify_output,
     verify_output_set,
@@ -47,7 +49,10 @@ def main() -> None:
     parser.add_argument("--answer-count", type=int, default=4)
     parser.add_argument("--wandb-project")
     parser.add_argument("--wandb-run-name")
+    parser.add_argument("--bootstrap-samples", type=int, default=1000)
     args = parser.parse_args()
+    if args.bootstrap_samples < 1:
+        raise SystemExit("--bootstrap-samples must be >= 1")
 
     episodes_path = Path(args.episodes)
     states_path = Path(args.states)
@@ -120,6 +125,19 @@ def main() -> None:
         json.dumps(set_summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    report_dir = output_dir / "report"
+    build_report(
+        episodes_path=rescored_path,
+        states_path=states_path,
+        output_dir=report_dir,
+        ks=(1,),
+        bootstrap_samples=args.bootstrap_samples,
+        set_answer_count=(
+            args.answer_count
+            if output_mode in {"multi_answer_rlvr", "verbalized_sampling"}
+            else None
+        ),
+    )
 
     if args.wandb_project:
         import wandb
@@ -137,11 +155,17 @@ def main() -> None:
         )
         run.log(_flatten_numeric(summary, prefix="eval_summary"))
         run.log(_flatten_numeric(set_summary, prefix="set_summary"))
+        _log_wandb_bootstrap_report(
+            run,
+            report_dir=report_dir,
+            bootstrap_samples=args.bootstrap_samples,
+        )
         run.finish()
 
     print(f"episodes={rescored_path}")
     print(f"summary={summary_path}")
     print(f"set_summary={set_summary_path}")
+    print(f"report={report_dir}")
     print(
         "candidate_parse_valid="
         f"{summary.get('candidate_parse_valid', 0.0):.6f} "
