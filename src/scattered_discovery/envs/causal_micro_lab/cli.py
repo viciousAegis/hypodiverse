@@ -188,35 +188,9 @@ def build_sft_dataset_main() -> None:
 
 
 def run_closed_loop_eval_main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--states", required=True)
-    parser.add_argument("--max-steps", type=int, default=8)
-    args = parser.parse_args()
-    from scattered_discovery.envs.causal_micro_lab.planner import run_oracle_closed_loop
-    from scattered_discovery.envs.causal_micro_lab.parser import parse_record_state
+    from scattered_discovery.envs.causal_micro_lab.closed_loop import main
 
-    records = [
-        json.loads(line)
-        for line in Path(args.states).read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    traces = [
-        run_oracle_closed_loop(parse_record_state(record), max_steps=args.max_steps)
-        for record in records
-    ]
-    summary = {}
-    if traces:
-        summary = {
-            "episodes": len(traces),
-            "identification_success": sum(trace.identified() for trace in traces)
-            / len(traces),
-            "mean_remaining_version_space_size": sum(
-                trace.final_version_space_size() for trace in traces
-            )
-            / len(traces),
-            "mean_steps": sum(len(trace.steps) for trace in traces) / len(traces),
-        }
-    print(json.dumps(summary, indent=2, sort_keys=True))
+    main()
 
 
 def build_verl_dataset_main() -> None:

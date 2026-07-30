@@ -1,0 +1,38 @@
+{
+  "balance_axis": "predictive_separation_tertile",
+  "beam_width": 256,
+  "candidate_multiplier": 2,
+  "counts_by_initial_M": {
+    "16": 64,
+    "32": 64
+  },
+  "counts_by_separation": {
+    "high": 42,
+    "low": 44,
+    "medium": 42
+  },
+  "excluded_paths": [
+    "data/causal_micro_lab/pilot_sft/states_test.jsonl",
+    "data/causal_micro_lab/pilot_sft/states_train.jsonl",
+    "data/causal_micro_lab/pilot_sft/states_val.jsonl",
+    "data/causal_micro_lab/sft_debug/states_test.jsonl",
+    "data/causal_micro_lab/sft_debug/states_train.jsonl",
+    "data/causal_micro_lab/sft_debug/states_val.jsonl",
+    "eval_sets/causal_micro_lab/final_v1/states.jsonl"
+  ],
+  "files": {
+    "states.jsonl": "e904e215eb813fe0e2e6057d2179a39272d78536832a6e3ed20049763d2fe526"
+  },
+  "generation_seed": 20260730,
+  "initial_mode_counts": [
+    16,
+    32
+  ],
+  "max_evidence": 8,
+  "name": "causal_micro_lab_closed_loop_v1",
+  "one_state_per_hidden_mode": true,
+  "source_mode_split": "test",
+  "split_seed": 1,
+  "total_trajectories": 128,
+  "trajectories_per_count": 64
+}
