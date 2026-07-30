@@ -4,8 +4,10 @@ from dataclasses import dataclass
 
 from scattered_discovery.envs.causal_micro_lab.parser import (
     HypothesisParseError,
+    HypothesisCandidate,
     parse_hypothesis,
     parse_hypothesis_set,
+    parse_verbalized_hypothesis_set,
 )
 from scattered_discovery.envs.causal_micro_lab.signatures import (
     ModeTable,
@@ -69,6 +71,10 @@ class SetVerificationResult:
     valid_mode_ids: tuple[str, ...]
     unique_valid_mode_ids: tuple[str, ...]
     duplicate_valid_modes: int
+    probabilities: tuple[float, ...] = ()
+    probability_format_valid: bool | None = None
+    probability_sum_error: float | None = None
+    probability_entropy: float | None = None
 
     @property
     def any_valid(self) -> bool:
@@ -88,7 +94,9 @@ class SetVerificationResult:
 
     @property
     def valid_count(self) -> int:
-        return sum(item.verification.is_currently_valid_mode for item in self.candidates)
+        return sum(
+            item.verification.is_currently_valid_mode for item in self.candidates
+        )
 
     def coverage_per_k(self) -> float:
         if self.expected_count <= 0:
@@ -114,6 +122,10 @@ class SetVerificationResult:
             "unique_valid_mode_ids": list(self.unique_valid_mode_ids),
             "duplicate_valid_modes": self.duplicate_valid_modes,
             "coverage_per_k": self.coverage_per_k(),
+            "probabilities": list(self.probabilities),
+            "probability_format_valid": self.probability_format_valid,
+            "probability_sum_error": self.probability_sum_error,
+            "probability_entropy": self.probability_entropy,
             "candidates": [item.as_dict() for item in self.candidates],
         }
 
@@ -163,8 +175,80 @@ def verify_output_set(
     mode_table: ModeTable | None = None,
     strict: bool = True,
 ) -> SetVerificationResult:
-    table = mode_table or build_mode_table()
     parsed_candidates = parse_hypothesis_set(text, expected_count=expected_count)
+    return _verify_parsed_set(
+        parsed_candidates,
+        state,
+        expected_count=expected_count,
+        mode_table=mode_table,
+        strict=strict,
+    )
+
+
+def verify_verbalized_output_set(
+    text: str,
+    state: EvidenceState,
+    *,
+    expected_count: int,
+    mode_table: ModeTable | None = None,
+    strict: bool = True,
+) -> SetVerificationResult:
+    parsed = parse_verbalized_hypothesis_set(text)
+    probabilities = tuple(
+        candidate.probability
+        for candidate in parsed
+        if candidate.probability is not None
+    )
+    probability_format_valid = (
+        len(probabilities) == expected_count
+        and all(0.0 <= value <= 1.0 for value in probabilities)
+        and abs(sum(probabilities) - 1.0) <= 1e-3
+    )
+    probability_sum_error = (
+        abs(sum(probabilities) - 1.0) if len(probabilities) == expected_count else None
+    )
+    probability_entropy = None
+    if probability_format_valid:
+        import math
+
+        entropy = -sum(value * math.log(value) for value in probabilities if value > 0)
+        probability_entropy = (
+            entropy / math.log(expected_count) if expected_count > 1 else 0.0
+        )
+    result = _verify_parsed_set(
+        [
+            HypothesisCandidate(index=candidate.index, text=candidate.text)
+            for candidate in parsed
+        ],
+        state,
+        expected_count=expected_count,
+        mode_table=mode_table,
+        strict=strict,
+    )
+    return SetVerificationResult(
+        expected_count=result.expected_count,
+        candidate_count=result.candidate_count,
+        format_valid=result.format_valid and probability_format_valid,
+        candidates=result.candidates,
+        valid_mode_ids=result.valid_mode_ids,
+        unique_valid_mode_ids=result.unique_valid_mode_ids,
+        duplicate_valid_modes=result.duplicate_valid_modes,
+        probabilities=probabilities,
+        probability_format_valid=probability_format_valid,
+        probability_sum_error=probability_sum_error,
+        probability_entropy=probability_entropy,
+    )
+
+
+def _verify_parsed_set(
+    parsed_candidates: list[HypothesisCandidate],
+    state: EvidenceState,
+    *,
+    expected_count: int,
+    mode_table: ModeTable | None,
+    strict: bool,
+) -> SetVerificationResult:
+    table = mode_table or build_mode_table()
     candidate_indexes = {candidate.index for candidate in parsed_candidates}
     format_valid = (
         expected_count > 0

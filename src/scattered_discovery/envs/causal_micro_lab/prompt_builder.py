@@ -15,7 +15,11 @@ def build_latent_prompt(prompt: str, latent_id: int) -> str:
 def build_prompt(
     state: EvidenceState,
     *,
-    output_mode: Literal["single", "multi_answer_rlvr"] = "single",
+    output_mode: Literal[
+        "single",
+        "multi_answer_rlvr",
+        "verbalized_sampling",
+    ] = "single",
     answer_count: int = 1,
 ) -> str:
     lines = [
@@ -55,7 +59,25 @@ def build_prompt(
                 "",
             ]
         )
-    if output_mode == "multi_answer_rlvr":
+    if output_mode == "verbalized_sampling":
+        lines.extend(
+            [
+                "",
+                f"Return exactly {answer_count} different candidate hypotheses.",
+                "Assign each candidate a probability between 0 and 1.",
+                "The probabilities must sum to 1.",
+                "Use exactly this plain format, repeated in order:",
+                "ANSWER 1",
+                "Z1: OP input [input]",
+                "Z2: OP input [input]",
+                "Y: OP input [input]",
+                "PROBABILITY: 0.25",
+                "",
+                f"Continue through ANSWER {answer_count}.",
+                "Return no other final-answer text.",
+            ]
+        )
+    elif output_mode == "multi_answer_rlvr":
         lines.extend(
             [
                 "",

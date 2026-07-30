@@ -24,6 +24,13 @@ class HypothesisCandidate:
     text: str
 
 
+@dataclass(frozen=True)
+class VerbalizedHypothesisCandidate:
+    index: int
+    text: str
+    probability: float | None
+
+
 _RULE_LINE_RE = re.compile(
     r"^\s*(Z1|Z2|Y)\s*(?:=|:=)\s*(COPY|NOT|AND|OR|XOR)\s*\(([^()]*)\)\s*$",
     re.IGNORECASE,
@@ -35,6 +42,16 @@ _FLAT_RULE_LINE_RE = re.compile(
 _ANSWER_TAG_RE = re.compile(
     r"<answer(?P<index>\d+)>\s*(?P<body>.*?)\s*</answer(?P=index)>",
     re.IGNORECASE | re.DOTALL,
+)
+_PLAIN_ANSWER_HEADING_RE = re.compile(
+    r"^\s*ANSWER\s+(?P<index>\d+)\s*:?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_PROBABILITY_LINE_RE = re.compile(
+    r"^\s*PROBABILITY\s*:\s*(?P<value>"
+    r"(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+    r")\s*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 
@@ -62,7 +79,9 @@ def _strip_fence(text: str) -> str:
     return value
 
 
-def _canonicalize_inputs(target: str, operator: str, inputs: tuple[str, ...]) -> tuple[str, ...]:
+def _canonicalize_inputs(
+    target: str, operator: str, inputs: tuple[str, ...]
+) -> tuple[str, ...]:
     if operator.upper() not in BINARY_OPERATORS:
         return inputs
     allowed = PARENTS[target.upper()]
@@ -82,9 +101,7 @@ def parse_hypothesis_rules(text: str):
         if match is not None:
             target, operator, raw_inputs = match.groups()
             inputs = tuple(
-                item.strip().upper()
-                for item in raw_inputs.split(",")
-                if item.strip()
+                item.strip().upper() for item in raw_inputs.split(",") if item.strip()
             )
         else:
             match = _FLAT_RULE_LINE_RE.match(line)
@@ -124,12 +141,49 @@ def parse_hypothesis(text: str, *, strict: bool = True):
     return parse_hypothesis_rules(value)
 
 
-def parse_hypothesis_set(text: str, *, expected_count: int | None = None) -> list[HypothesisCandidate]:
+def parse_hypothesis_set(
+    text: str, *, expected_count: int | None = None
+) -> list[HypothesisCandidate]:
     value = _strip_fence(text)
     candidates = [
-        HypothesisCandidate(index=int(match.group("index")), text=match.group("body").strip())
+        HypothesisCandidate(
+            index=int(match.group("index")), text=match.group("body").strip()
+        )
         for match in _ANSWER_TAG_RE.finditer(value)
     ]
+    candidates.sort(key=lambda item: item.index)
+    if expected_count is not None:
+        return [item for item in candidates if 1 <= item.index <= expected_count]
+    return candidates
+
+
+def parse_verbalized_hypothesis_set(
+    text: str,
+    *,
+    expected_count: int | None = None,
+) -> list[VerbalizedHypothesisCandidate]:
+    value = _strip_fence(text)
+    headings = list(_PLAIN_ANSWER_HEADING_RE.finditer(value))
+    candidates = []
+    for offset, heading in enumerate(headings):
+        body_end = (
+            headings[offset + 1].start() if offset + 1 < len(headings) else len(value)
+        )
+        body = value[heading.end() : body_end].strip()
+        probability_matches = list(_PROBABILITY_LINE_RE.finditer(body))
+        probability = (
+            float(probability_matches[0].group("value"))
+            if len(probability_matches) == 1
+            else None
+        )
+        hypothesis_text = _PROBABILITY_LINE_RE.sub("", body).strip()
+        candidates.append(
+            VerbalizedHypothesisCandidate(
+                index=int(heading.group("index")),
+                text=hypothesis_text,
+                probability=probability,
+            )
+        )
     candidates.sort(key=lambda item: item.index)
     if expected_count is not None:
         return [item for item in candidates if 1 <= item.index <= expected_count]

@@ -19,6 +19,7 @@ from scattered_discovery.envs.causal_micro_lab.parser import (
     parse_hypothesis_json,
     parse_hypothesis_rules,
     parse_hypothesis_set,
+    parse_verbalized_hypothesis_set,
 )
 from scattered_discovery.envs.causal_micro_lab.planner import (
     oracle_disagreement_experiment,
@@ -51,6 +52,7 @@ from scattered_discovery.envs.causal_micro_lab.tables import (
 from scattered_discovery.envs.causal_micro_lab.verifier import (
     verify_output,
     verify_output_set,
+    verify_verbalized_output_set,
 )
 from scattered_discovery.envs.causal_micro_lab.eval import (
     evaluate_states,
@@ -204,6 +206,72 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertEqual(len(result.unique_valid_mode_ids), 2)
         self.assertEqual(result.coverage_per_k(), 0.5)
         self.assertEqual(result.coverage_per_available(self.state), 0.5)
+
+    def test_verbalized_sampling_parser_and_verifier(self):
+        parts = []
+        for index, mode_id in enumerate(self.state.valid_mode_ids, start=1):
+            parts.extend(
+                [
+                    f"ANSWER {index}",
+                    self.table.modes_by_id[mode_id].canonical.render_flat_rules(),
+                    f"PROBABILITY: {0.1 * index}",
+                ]
+            )
+        payload = "\n".join(parts)
+        candidates = parse_verbalized_hypothesis_set(payload, expected_count=4)
+        self.assertEqual([item.index for item in candidates], [1, 2, 3, 4])
+        for actual, expected in zip(
+            [item.probability for item in candidates],
+            [0.1, 0.2, 0.3, 0.4],
+            strict=True,
+        ):
+            self.assertAlmostEqual(actual or 0.0, expected)
+
+        result = verify_verbalized_output_set(
+            payload,
+            self.state,
+            expected_count=4,
+            mode_table=self.table,
+        )
+        self.assertTrue(result.format_valid)
+        self.assertTrue(result.probability_format_valid)
+        self.assertAlmostEqual(result.probability_sum_error or 0.0, 0.0)
+        self.assertIsNotNone(result.probability_entropy)
+        self.assertEqual(len(result.unique_valid_mode_ids), 4)
+        self.assertEqual(result.coverage_per_available(self.state), 1.0)
+
+        malformed = payload.replace("PROBABILITY: 0.4", "PROBABILITY: 0.3")
+        malformed_result = verify_verbalized_output_set(
+            malformed,
+            self.state,
+            expected_count=4,
+            mode_table=self.table,
+        )
+        self.assertFalse(malformed_result.format_valid)
+        self.assertFalse(malformed_result.probability_format_valid)
+        self.assertAlmostEqual(malformed_result.probability_sum_error or 0.0, 0.1)
+
+        extra_answer = f"{payload}\nANSWER 5\n{parts[1]}\nPROBABILITY: 0"
+        extra_result = verify_verbalized_output_set(
+            extra_answer,
+            self.state,
+            expected_count=4,
+            mode_table=self.table,
+        )
+        self.assertFalse(extra_result.format_valid)
+        self.assertEqual(extra_result.candidate_count, 5)
+
+    def test_verbalized_sampling_prompt_uses_plain_blocks(self):
+        prompt = build_prompt(
+            self.state,
+            output_mode="verbalized_sampling",
+            answer_count=4,
+        )
+        self.assertIn("ANSWER 1", prompt)
+        self.assertIn("ANSWER 4", prompt)
+        self.assertIn("PROBABILITY: 0.25", prompt)
+        self.assertNotIn("<answer", prompt)
+        self.assertNotIn("valid_mode_ids", prompt)
 
     def test_env_rewards_nonempty_final_output(self):
         env = make_env(
@@ -669,6 +737,59 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertTrue(records[0]["fallback_produced_output"])
         self.assertEqual(records[0]["initial_completion_tokens"], 4096)
         self.assertTrue(records[0]["verification"]["is_currently_valid_mode"])
+
+    def test_verbalized_sampling_eval_fallback(self):
+        parts = []
+        for index, mode_id in enumerate(self.state.valid_mode_ids, start=1):
+            parts.extend(
+                [
+                    f"ANSWER {index}",
+                    self.table.modes_by_id[mode_id].canonical.render_flat_rules(),
+                    "PROBABILITY: 0.25",
+                ]
+            )
+        final_output = "\n".join(parts)
+
+        class FallbackBackend:
+            def __init__(self):
+                self.calls = []
+
+            def chat(self, messages, options=None):
+                self.calls.append((messages, options))
+                if len(self.calls) == 1:
+                    return ChatResponse(
+                        content="",
+                        thinking="I should compare several possible programs.",
+                        finish_reason="length",
+                        completion_tokens=16000,
+                    )
+                return ChatResponse(
+                    content=final_output,
+                    finish_reason="stop",
+                    completion_tokens=128,
+                )
+
+        backend = FallbackBackend()
+        records = evaluate_states(
+            states=[self.state],
+            backend=backend,
+            model="static",
+            output_mode="verbalized_sampling",
+            answer_count=4,
+            thinking_fallback=True,
+            fallback_num_predict=512,
+        )
+        self.assertEqual(len(backend.calls), 2)
+        self.assertFalse(backend.calls[1][1].think)
+        self.assertEqual(backend.calls[1][1].num_predict, 512)
+        self.assertIn(
+            "plain ANSWER 1 through ANSWER 4 blocks", backend.calls[1][0][-1].content
+        )
+        verification = records[0]["verification"]
+        self.assertEqual(verification["output_mode"], "verbalized_sampling")
+        self.assertTrue(verification["format_valid"])
+        self.assertTrue(verification["probability_format_valid"])
+        self.assertEqual(verification["valid_count"], 4)
 
     def test_factory_env_and_agent_loop_import(self):
         env = make_env(

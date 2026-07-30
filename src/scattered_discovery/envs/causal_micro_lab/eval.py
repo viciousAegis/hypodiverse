@@ -32,7 +32,10 @@ from scattered_discovery.envs.causal_micro_lab.verifier import (
     VerificationResult,
     verify_output,
     verify_output_set,
+    verify_verbalized_output_set,
 )
+
+SET_OUTPUT_MODES = frozenset({"multi_answer_rlvr", "verbalized_sampling"})
 
 
 def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
@@ -227,9 +230,7 @@ def _bootstrap_metric_name(row: dict[str, str]) -> str:
     label_path = "/".join(labels)
     metric = re.sub(r"[^A-Za-z0-9_.-]+", "_", row["metric"])
     return "/".join(
-        part
-        for part in ("bootstrap_ci95", row["slice"], label_path, metric)
-        if part
+        part for part in ("bootstrap_ci95", row["slice"], label_path, metric) if part
     )
 
 
@@ -375,7 +376,7 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
         if r.get("initial_completion_tokens") is not None
         or r.get("fallback_completion_tokens") is not None
     ]
-    return {
+    summary = {
         "episodes": len(records),
         "parse_valid": _mean(
             [float(r["verification"]["parse_valid"]) for r in records]
@@ -411,6 +412,45 @@ def _summarize_group(records: list[dict[str, Any]]) -> dict[str, Any]:
         ),
         "model_seconds_total": sum(float(r["model_seconds"]) for r in records),
     }
+    verbalized_records = [
+        record
+        for record in records
+        if record["verification"].get("output_mode") == "verbalized_sampling"
+    ]
+    if verbalized_records:
+        probability_sum_errors = [
+            float(record["verification"]["probability_sum_error"])
+            for record in verbalized_records
+            if record["verification"].get("probability_sum_error") is not None
+        ]
+        probability_entropies = [
+            float(record["verification"]["probability_entropy"])
+            for record in verbalized_records
+            if record["verification"].get("probability_entropy") is not None
+        ]
+        summary.update(
+            {
+                "set_format_valid": _mean(
+                    [
+                        float(record["verification"].get("format_valid", False))
+                        for record in verbalized_records
+                    ]
+                ),
+                "probability_format_valid": _mean(
+                    [
+                        float(
+                            record["verification"].get(
+                                "probability_format_valid", False
+                            )
+                        )
+                        for record in verbalized_records
+                    ]
+                ),
+                "probability_sum_error_mean": _mean(probability_sum_errors),
+                "probability_entropy_mean": _mean(probability_entropies),
+            }
+        )
+    return summary
 
 
 def _group_by(records: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
@@ -441,11 +481,13 @@ def _verification_from_dict(data: dict[str, Any]) -> VerificationResult:
 def _set_verification_to_eval_dict(
     result: SetVerificationResult,
     state: EvidenceState,
+    *,
+    output_mode: str,
 ) -> dict[str, Any]:
     data = result.as_dict()
     data.update(
         {
-            "output_mode": "multi_answer_rlvr",
+            "output_mode": output_mode,
             "parse_valid": result.parse_valid_count == result.expected_count,
             "syntax_valid": result.syntax_valid_count == result.expected_count,
             "evidence_consistent": result.evidence_consistent_count > 0,
@@ -457,7 +499,15 @@ def _set_verification_to_eval_dict(
             "mechanism_family": None,
             "coverage_per_available": result.coverage_per_available(state),
             "any_valid": result.any_valid,
-            "error": None if result.format_valid else "missing_or_empty_answer_tags",
+            "error": (
+                None
+                if result.format_valid
+                else (
+                    "invalid_verbalized_answer_format"
+                    if output_mode == "verbalized_sampling"
+                    else "missing_or_empty_answer_tags"
+                )
+            ),
         }
     )
     return data
@@ -742,6 +792,14 @@ def evaluate_states(
                         "answers in the required answer-tag format. Do not think further "
                         "and output nothing except the answers."
                     )
+                elif output_mode == "verbalized_sampling":
+                    final_instruction = (
+                        f"Using the reasoning above, return exactly {answer_count} "
+                        "different hypotheses as plain ANSWER 1 through "
+                        f"ANSWER {answer_count} blocks. Each block must contain only "
+                        "Z1, Z2, Y, and PROBABILITY lines. Probabilities must be between "
+                        "0 and 1 and sum to 1. Do not think further or add other text."
+                    )
                 else:
                     final_instruction = (
                         "Using the reasoning above, return the final hypothesis now. "
@@ -788,6 +846,17 @@ def evaluate_states(
                         expected_count=answer_count,
                     ),
                     state,
+                    output_mode=output_mode,
+                )
+            elif output_mode == "verbalized_sampling":
+                verification = _set_verification_to_eval_dict(
+                    verify_verbalized_output_set(
+                        output,
+                        state,
+                        expected_count=answer_count,
+                    ),
+                    state,
+                    output_mode=output_mode,
                 )
             else:
                 verification = verify_output(canonical_output, state).as_dict()
@@ -808,10 +877,10 @@ def evaluate_states(
                 "mechanism_family": None,
                 "error": request_error,
             }
-            if output_mode == "multi_answer_rlvr":
+            if output_mode in SET_OUTPUT_MODES:
                 verification.update(
                     {
-                        "output_mode": "multi_answer_rlvr",
+                        "output_mode": output_mode,
                         "expected_count": answer_count,
                         "candidate_count": 0,
                         "format_valid": False,
@@ -828,6 +897,15 @@ def evaluate_states(
                         "candidates": [],
                     }
                 )
+                if output_mode == "verbalized_sampling":
+                    verification.update(
+                        {
+                            "probabilities": [],
+                            "probability_format_valid": False,
+                            "probability_sum_error": None,
+                            "probability_entropy": None,
+                        }
+                    )
         record = {
             "sample_id": sample_id,
             "state_index": state_index,
@@ -997,6 +1075,9 @@ def run_eval(args: argparse.Namespace) -> tuple[Path, dict[str, Any]]:
                     "coverage_per_k",
                     "coverage_per_available",
                     "any_valid",
+                    "probability_format_valid",
+                    "probability_sum_error",
+                    "probability_entropy",
                 ):
                     value = record["verification"].get(key)
                     if isinstance(value, bool):
@@ -1150,7 +1231,7 @@ def main() -> None:
     parser.add_argument("--think", default=True)
     parser.add_argument(
         "--output-mode",
-        choices=["single", "multi_answer_rlvr"],
+        choices=["single", "multi_answer_rlvr", "verbalized_sampling"],
         default="single",
     )
     parser.add_argument("--answer-count", type=int, default=1)
@@ -1179,9 +1260,7 @@ def main() -> None:
     parser.add_argument(
         "--build-report",
         action="store_true",
-        help=(
-            "Build per-state CSVs and bootstrap intervals before closing W&B."
-        ),
+        help=("Build per-state CSVs and bootstrap intervals before closing W&B."),
     )
     parser.add_argument("--bootstrap-samples", type=int, default=1000)
     args = parser.parse_args()
