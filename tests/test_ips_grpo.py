@@ -612,23 +612,23 @@ class IPSGRPOTests(unittest.TestCase):
             {key: value for key, value in combined.items() if key not in ignored},
             {key: value for key, value in latent_only.items() if key not in ignored},
         )
-        self.assertEqual(combined["ips_grpo_latent_mi_alpha"], 0.25)
+        self.assertEqual(combined["ips_grpo_latent_mi_alpha"], 0.5)
         self.assertEqual(combined["ips_grpo_latent_mi_clip"], 1.0)
         self.assertEqual(
             combined["ips_grpo_latent_mi_token_scope"],
             "full_response",
         )
         self.assertEqual(combined["ips_grpo_latent_mi_reduction"], "sum")
-        self.assertFalse(combined["ips_grpo_latent_mi_valid_only"])
+        self.assertTrue(combined["ips_grpo_latent_mi_valid_only"])
         self.assertEqual(combined["ips_grpo_latent_ips_reward_mode"], "bonus")
-        self.assertEqual(combined["ips_grpo_latent_ips_bonus_max"], 0.25)
+        self.assertEqual(combined["ips_grpo_latent_ips_bonus_max"], 0.5)
         self.assertEqual(
             combined["ips_grpo_latent_mi_alpha"] * combined["ips_grpo_latent_mi_clip"]
             + combined["ips_grpo_latent_ips_bonus_max"],
-            0.5,
+            1.0,
         )
-        self.assertLess(
-            0.5,
+        self.assertEqual(
+            1.0,
             combined["causal_micro_lab_valid_hypothesis_reward"],
         )
 
@@ -666,12 +666,12 @@ class IPSGRPOTests(unittest.TestCase):
             index=["state"] * 8,
             metadata=metadata,
             epsilon=0.2,
-            mi_alpha=0.25,
+            mi_alpha=0.5,
             mi_clip=1.0,
             use_ips=True,
             latent_count=8,
             ips_reward_mode="bonus",
-            ips_bonus_max=0.25,
+            ips_bonus_max=0.5,
             mi_token_scope="full_response",
             mi_reduction="sum",
             mi_valid_only=False,
@@ -679,9 +679,9 @@ class IPSGRPOTests(unittest.TestCase):
 
         self.assertEqual(metrics["latent_ips/weight_max"], 5.0)
         self.assertEqual(metrics["latent_ips/ips_reward_mode_bonus"], 1.0)
-        self.assertEqual(metrics["latent_ips/ips_bonus_bound"], 0.25)
-        self.assertEqual(metrics["latent_ips/ips_bonus_max_observed"], 0.25)
-        self.assertEqual(metrics["latent_ips/shaped_score_max"], 1.25)
+        self.assertEqual(metrics["latent_ips/ips_bonus_bound"], 0.5)
+        self.assertEqual(metrics["latent_ips/ips_bonus_max_observed"], 0.5)
+        self.assertEqual(metrics["latent_ips/shaped_score_max"], 1.5)
 
     def test_slurm_launcher_uses_two_gpus_and_preflight(self):
         slurm = (

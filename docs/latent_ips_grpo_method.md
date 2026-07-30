@@ -45,11 +45,17 @@ Let `r_i` retain the existing reward ladder:
 - `1.0`: evidence-consistent valid hypothesis;
 - the existing response-length penalty is added separately.
 
-For valid response `y_i` with assigned latent `z_i` and counterfactual latent
-`z_i^-`, the answer-only specificity score is
+The original `v1` implementation scored only valid responses and only final
+answer tokens. That made the signal ineffective: the full reasoning prefix had
+already determined the answer before the latent was compared, and invalid
+early-training samples received no latent signal.
+
+The minimally repaired `v2` objective scores every non-truncated generated
+trajectory `y_i` under its assigned latent `z_i` and one counterfactual latent
+`z_i^-`:
 
 ```text
-m_i = mean_t [
+m_i = sum_t [
   log(2) + log p(y_it | x, z_i, y_i,<t)
          - logaddexp(
              log p(y_it | x, z_i, y_i,<t),
@@ -58,11 +64,17 @@ m_i = mean_t [
 ]
 ```
 
-Only tokens in the visible final answer are scored. The specificity term is
-clipped to `[-1, 1]`, multiplied by `alpha = 0.1`, and gated by validity. An
-invalid response cannot earn latent-specificity reward.
+All generated response tokens selected by `response_mask` are scored. The
+specificity term is clipped to `[-1, 1]` and multiplied by `alpha = 0.5`.
+Consequently its contribution is always in `[-0.5, 0.5]`.
 
-For the combined method, valid outcome `h_i` receives empirical
+The v2 run initializes from the trained v1 checkpoint, which already has high
+Pass@16 and non-sparse validity. Latent specificity is therefore applied only
+to valid responses. This makes the second stage optimize diversity within the
+valid set rather than allowing an invalid but latent-specific trajectory to
+outscore a valid hypothesis. Truncated responses remain masked.
+
+For the combined method, valid outcome `h_i` first receives empirical
 inverse-frequency weight
 
 ```text
@@ -70,14 +82,22 @@ w_i = 1 / max(n(h_i) / G, epsilon), epsilon = 0.2
 ```
 
 where `n(h_i)` is its canonical consequence-mode frequency in the eight-sample
-group. Syntax shaping and length penalties are not inverse weighted. The final
-per-sequence score before ordinary within-group GRPO normalization is
+group. Rather than replacing the `1.0` validity reward with a value as large as
+`5.0`, v2 converts this weight into a bounded rarity bonus:
 
 ```text
-s_i = r_i - r_valid_i + w_i r_valid_i + alpha clip(m_i)
+b_i = 0.5 * (w_i - 1) / (1 / epsilon - 1)
 ```
 
-For the latent-only ablation, `w_i = 1`. Everything else is identical.
+Thus `b_i` lies in `[0, 0.5]`. Syntax shaping and length penalties are not
+weighted. The final per-sequence score before ordinary within-group GRPO
+normalization is
+
+```text
+s_i = r_i + 1[h_i is valid] (b_i + 0.5 clip(m_i))
+```
+
+For the latent-only ablation, `b_i = 0`. Everything else is identical.
 
 ## Compute matching
 
@@ -103,13 +123,26 @@ should be reported if resources permit.
 Combined method:
 
 ```bash
-sbatch scripts/cluster/sbatch_causal_micro_lab_latent_grpo.slurm combined
+sbatch scripts/cluster/sbatch_causal_micro_lab_latent_grpo_v2.slurm combined
 ```
+
+By default, this finds the newest complete checkpoint under
+`causal_micro_lab_cluster_latent_ips_grpo_v1_k8_r1`, merges its actor weights,
+and uses that model to initialize a fresh v2 run. It does not restore the v1
+optimizer, scheduler, or training step. Override the source when needed:
+
+```bash
+sbatch scripts/cluster/sbatch_causal_micro_lab_latent_grpo_v2.slurm \
+  combined --init-run OTHER_RUN --init-step 40
+```
+
+Use `--init-model /absolute/merged/hf/path` for an already merged model, or
+`--base-model` to initialize directly from Qwen3-4B.
 
 Latent-only ablation:
 
 ```bash
-sbatch scripts/cluster/sbatch_causal_micro_lab_latent_grpo.slurm latent-only
+sbatch scripts/cluster/sbatch_causal_micro_lab_latent_grpo_v2.slurm latent-only
 ```
 
 Both use the same `data/causal_micro_lab/trainable` files as validity GRPO,
@@ -139,6 +172,14 @@ top-p settings.
 W&B receives:
 
 - `latent_ips/mi_raw_mean` and `latent_ips/mi_raw_std`;
+- `latent_ips/mi_reward_bound`, `mi_reward_abs_mean`, and
+  `mi_reward_max_abs`;
+- `latent_ips/mi_to_valid_reward_bound_ratio` (configured as `0.5`);
+- `latent_ips/ips_bonus_bound`, `ips_bonus_mean`, and
+  `ips_bonus_max_observed`;
+- `latent_ips/mi_clip_rate`;
+- `latent_ips/trajectory_logp_margin_mean`;
+- `latent_ips/answer_mi_raw_mean` as a diagnostic for the failed v1 signal;
 - `latent_ips/answer_logp_margin_mean`;
 - `latent_ips/mi_reward_mean`;
 - `latent_ips/cross_latent_outcome_collision_rate`;

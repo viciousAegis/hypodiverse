@@ -1,0 +1,80 @@
+# Compute-matched latent-only ablation for the repaired v2 objective.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 1
+causal_micro_lab_rebuild_dataset: 0
+causal_micro_lab_dataset_preset: trainable
+causal_micro_lab_dataset_output_dir: data/causal_micro_lab/trainable
+causal_micro_lab_dataset_seed: 1
+causal_micro_lab_target_counts: 4,8,16
+causal_micro_lab_val_states_per_count: 43
+causal_micro_lab_test_states_per_count: 43
+causal_micro_lab_val_max_rows: 128
+causal_micro_lab_test_max_rows: 128
+causal_micro_lab_progress_every: 512
+
+causal_micro_lab_nonempty_output_reward: 0.0
+causal_micro_lab_rule_marker_reward: 0.0
+causal_micro_lab_parse_valid_reward: 0.0
+causal_micro_lab_syntax_valid_reward: 0.2
+causal_micro_lab_evidence_consistent_reward: 0.0
+causal_micro_lab_valid_hypothesis_reward: 1.0
+causal_micro_lab_length_penalty_start: 3072
+causal_micro_lab_length_penalty_max: -0.2
+causal_micro_lab_mask_truncated: 1
+
+trainer_entrypoint: scattered_discovery.verl.ips_grpo_main
+trainer_use_v1: true
+ips_grpo_epsilon: 0.2
+ips_grpo_probe_fraction: 1.0
+ips_grpo_length_penalty_start: 3072
+ips_grpo_latent_enabled: true
+ips_grpo_latent_count: 8
+ips_grpo_latent_negative_offset: 1
+ips_grpo_latent_mi_alpha: 0.5
+ips_grpo_latent_mi_clip: 1.0
+ips_grpo_latent_mi_token_scope: full_response
+ips_grpo_latent_mi_reduction: sum
+ips_grpo_latent_mi_valid_only: true
+ips_grpo_latent_use_ips: false
+ips_grpo_latent_ips_reward_mode: bonus
+ips_grpo_latent_ips_bonus_max: 0.5
+
+discovery_algo: grpo
+model_id: Qwen/Qwen3-4B
+model_basename: Qwen3-4B
+download_model: 1
+attn_implementation: sdpa
+use_remove_padding: "False"
+agent_loop_config_path: configs/verl/latent_grpo_agent_loop.yaml
+default_agent_loop: latent_grpo_agent_loop
+
+train_file: data/causal_micro_lab/trainable/verl_train.jsonl
+val_file: data/causal_micro_lab/trainable/verl_val.jsonl
+
+n_gpus_per_node: 2
+train_batch_size: 16
+ppo_mini_batch_size: 8
+rollout_n: 8
+rollout_tp: 1
+rollout_gpu_mem_util: 0.50
+actor_micro_batch_size_per_gpu: 1
+rollout_log_prob_micro_batch_size_per_gpu: 1
+rollout_calculate_log_probs: "False"
+ref_log_prob_micro_batch_size_per_gpu: 1
+actor_lr: 1e-6
+kl_loss_coef: 0.001
+entropy_coeff: 0
+
+temperature: 1.0
+top_p: 1.0
+total_epochs: 1
+total_training_steps: 84
+save_freq: 5
+test_freq: 10
+max_actor_ckpt_to_keep: 1
+max_critic_ckpt_to_keep: 1
+max_prompt_length: 2048
+max_response_length: 6000
+
+experiment_name: causal_micro_lab_cluster_latent_only_grpo_v2_fulltraj_k8_r1
