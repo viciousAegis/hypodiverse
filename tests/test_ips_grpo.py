@@ -249,6 +249,116 @@ class IPSGRPOTests(unittest.TestCase):
             1.0,
         )
 
+    def test_repaired_latent_mi_uses_full_response_and_is_reward_bounded(self):
+        if torch is None:
+            self.skipTest("torch is not installed locally")
+        rewards = torch.zeros(4, 3)
+        mask = torch.tensor(
+            [
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [1.0, 1.0, 1.0],
+                [0.0, 0.0, 0.0],
+            ]
+        )
+        assigned = torch.tensor(
+            [
+                [-1.0, -1.0, -1.0],
+                [-0.1, -0.1, -0.1],
+                [-4.0, -4.0, -4.0],
+                [-0.1, -0.1, -0.1],
+            ]
+        )
+        negative = torch.tensor(
+            [
+                [-1.0, -1.0, -1.0],
+                [-4.0, -4.0, -4.0],
+                [-0.1, -0.1, -0.1],
+                [-4.0, -4.0, -4.0],
+            ]
+        )
+        metadata = [
+            {
+                "valid": False,
+                "valid_reward": 0.0,
+                "behavior": None,
+                "latent_enabled": True,
+                "latent_id": latent_id,
+                "answer_token_count": 1,
+            }
+            for latent_id in range(1, 5)
+        ]
+
+        advantages, _, metrics = compute_latent_ips_grpo_advantages(
+            token_level_rewards=rewards,
+            response_mask=mask,
+            assigned_log_probs=assigned,
+            negative_log_probs=negative,
+            index=["state"] * 4,
+            metadata=metadata,
+            epsilon=0.2,
+            mi_alpha=1.0,
+            mi_clip=1.0,
+            use_ips=False,
+            latent_count=4,
+            mi_token_scope="full_response",
+            mi_reduction="sum",
+            mi_valid_only=False,
+        )
+
+        self.assertGreater(advantages[1, 0], advantages[0, 0])
+        self.assertGreater(advantages[0, 0], advantages[2, 0])
+        self.assertTrue(torch.equal(advantages[3], torch.zeros(3)))
+        self.assertEqual(metrics["latent_ips/mi_reward_bound"], 1.0)
+        self.assertLessEqual(metrics["latent_ips/mi_reward_max_abs"], 1.0)
+        self.assertEqual(metrics["latent_ips/mi_scope_full_response"], 1.0)
+        self.assertEqual(metrics["latent_ips/mi_reduction_sum"], 1.0)
+        self.assertEqual(metrics["latent_ips/mi_valid_only"], 0.0)
+        self.assertGreater(metrics["latent_ips/mi_clip_rate"], 0.0)
+
+    def test_repaired_latent_reward_matches_validity_reward_scale(self):
+        if torch is None:
+            self.skipTest("torch is not installed locally")
+        _, _, metrics = compute_latent_ips_grpo_advantages(
+            token_level_rewards=torch.tensor([[1.0], [0.0]]),
+            response_mask=torch.ones(2, 1),
+            assigned_log_probs=torch.tensor([[-0.1], [-0.1]]),
+            negative_log_probs=torch.tensor([[-2.0], [-2.0]]),
+            index=["state", "state"],
+            metadata=[
+                {
+                    "valid": True,
+                    "valid_reward": 1.0,
+                    "behavior": (1, 1),
+                    "latent_enabled": True,
+                    "latent_id": 1,
+                    "answer_token_count": 1,
+                },
+                {
+                    "valid": False,
+                    "valid_reward": 0.0,
+                    "behavior": None,
+                    "latent_enabled": True,
+                    "latent_id": 2,
+                    "answer_token_count": 1,
+                },
+            ],
+            epsilon=0.2,
+            mi_alpha=1.0,
+            mi_clip=1.0,
+            use_ips=False,
+            latent_count=2,
+            mi_token_scope="full_response",
+            mi_reduction="sum",
+            mi_valid_only=False,
+        )
+
+        self.assertEqual(metrics["latent_ips/valid_reward_max"], 1.0)
+        self.assertEqual(
+            metrics["latent_ips/mi_to_valid_reward_bound_ratio"],
+            1.0,
+        )
+
     def test_metadata_selection_uses_numeric_reward_fields_and_skips_padding(self):
         extra_fields = [
             {
@@ -485,6 +595,94 @@ class IPSGRPOTests(unittest.TestCase):
         ):
             self.assertEqual(validity[key], combined[key], key)
 
+    def test_repaired_latent_configs_are_matched_and_reward_scaled(self):
+        config_dir = ROOT / "configs" / "verl" / "runs"
+        combined = yaml.safe_load(
+            (config_dir / "causal_micro_lab_cluster_latent_ips_grpo_v2.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        latent_only = yaml.safe_load(
+            (
+                config_dir / "causal_micro_lab_cluster_latent_only_grpo_v2.yaml"
+            ).read_text(encoding="utf-8")
+        )
+        ignored = {"experiment_name", "ips_grpo_latent_use_ips"}
+        self.assertEqual(
+            {key: value for key, value in combined.items() if key not in ignored},
+            {key: value for key, value in latent_only.items() if key not in ignored},
+        )
+        self.assertEqual(combined["ips_grpo_latent_mi_alpha"], 0.25)
+        self.assertEqual(combined["ips_grpo_latent_mi_clip"], 1.0)
+        self.assertEqual(
+            combined["ips_grpo_latent_mi_token_scope"],
+            "full_response",
+        )
+        self.assertEqual(combined["ips_grpo_latent_mi_reduction"], "sum")
+        self.assertFalse(combined["ips_grpo_latent_mi_valid_only"])
+        self.assertEqual(combined["ips_grpo_latent_ips_reward_mode"], "bonus")
+        self.assertEqual(combined["ips_grpo_latent_ips_bonus_max"], 0.25)
+        self.assertEqual(
+            combined["ips_grpo_latent_mi_alpha"] * combined["ips_grpo_latent_mi_clip"]
+            + combined["ips_grpo_latent_ips_bonus_max"],
+            0.5,
+        )
+        self.assertLess(
+            0.5,
+            combined["causal_micro_lab_valid_hypothesis_reward"],
+        )
+
+    def test_repaired_ips_is_a_bounded_rarity_bonus(self):
+        if torch is None:
+            self.skipTest("torch is not installed locally")
+        rewards = torch.tensor([[1.0]] + [[0.0]] * 7)
+        mask = torch.ones_like(rewards)
+        metadata = [
+            {
+                "valid": True,
+                "valid_reward": 1.0,
+                "behavior": (1, 1),
+                "latent_enabled": True,
+                "latent_id": 1,
+                "answer_token_count": 1,
+            }
+        ] + [
+            {
+                "valid": False,
+                "valid_reward": 0.0,
+                "behavior": None,
+                "latent_enabled": True,
+                "latent_id": latent_id,
+                "answer_token_count": 1,
+            }
+            for latent_id in range(2, 9)
+        ]
+
+        _, _, metrics = compute_latent_ips_grpo_advantages(
+            token_level_rewards=rewards,
+            response_mask=mask,
+            assigned_log_probs=torch.zeros_like(rewards),
+            negative_log_probs=torch.zeros_like(rewards),
+            index=["state"] * 8,
+            metadata=metadata,
+            epsilon=0.2,
+            mi_alpha=0.25,
+            mi_clip=1.0,
+            use_ips=True,
+            latent_count=8,
+            ips_reward_mode="bonus",
+            ips_bonus_max=0.25,
+            mi_token_scope="full_response",
+            mi_reduction="sum",
+            mi_valid_only=False,
+        )
+
+        self.assertEqual(metrics["latent_ips/weight_max"], 5.0)
+        self.assertEqual(metrics["latent_ips/ips_reward_mode_bonus"], 1.0)
+        self.assertEqual(metrics["latent_ips/ips_bonus_bound"], 0.25)
+        self.assertEqual(metrics["latent_ips/ips_bonus_max_observed"], 0.25)
+        self.assertEqual(metrics["latent_ips/shaped_score_max"], 1.25)
+
     def test_slurm_launcher_uses_two_gpus_and_preflight(self):
         slurm = (
             ROOT / "scripts" / "cluster" / "sbatch_causal_micro_lab_ips_grpo.slurm"
@@ -516,6 +714,30 @@ class IPSGRPOTests(unittest.TestCase):
         self.assertIn("causal_micro_lab_cluster_latent_ips_grpo.yaml", slurm)
         self.assertIn("causal_micro_lab_cluster_latent_only_grpo.yaml", slurm)
         self.assertIn('if [[ -z "${WANDB_API_KEY:-}" ]]', slurm)
+
+        repaired_slurm = (
+            ROOT
+            / "scripts"
+            / "cluster"
+            / "sbatch_causal_micro_lab_latent_grpo_v2.slurm"
+        ).read_text(encoding="utf-8")
+        self.assertIn("#SBATCH --gres=gpu:2", repaired_slurm)
+        self.assertIn("check_ips_grpo_verl.py", repaired_slurm)
+        self.assertIn("--latent", repaired_slurm)
+        self.assertIn(
+            "causal_micro_lab_cluster_latent_ips_grpo_v2.yaml",
+            repaired_slurm,
+        )
+        self.assertIn(
+            "causal_micro_lab_cluster_latent_only_grpo_v2.yaml",
+            repaired_slurm,
+        )
+        self.assertIn(
+            'INIT_RUN="causal_micro_lab_cluster_latent_ips_grpo_v1_k8_r1"',
+            repaired_slurm,
+        )
+        self.assertIn("python -m verl.model_merger merge", repaired_slurm)
+        self.assertIn("unset RESUME_FROM_PATH", repaired_slurm)
 
     def test_latent_eval_cycles_labels_at_matched_k(self):
         latent = yaml.safe_load(

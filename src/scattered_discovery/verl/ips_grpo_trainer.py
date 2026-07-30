@@ -119,7 +119,6 @@ if _AgentLoopWorker is not None and _AgentLoopManager is not None:
                 validate=validate,
             )
 
-
     class IPSGRPOAgentLoopManager(_AgentLoopManager):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             self.agent_loop_workers_class = IPSGRPOAgentLoopWorker
@@ -531,6 +530,11 @@ def compute_latent_ips_grpo_advantages(
     mi_clip: float,
     use_ips: bool,
     latent_count: int,
+    ips_reward_mode: str = "replace",
+    ips_bonus_max: float = 0.25,
+    mi_token_scope: str = "answer",
+    mi_reduction: str = "mean",
+    mi_valid_only: bool = True,
 ) -> tuple[Any, Any, dict[str, float]]:
     """Combine validity, latent specificity, and optional empirical IPS."""
     import torch
@@ -541,8 +545,16 @@ def compute_latent_ips_grpo_advantages(
         raise ValueError("latent MI alpha must be non-negative")
     if mi_clip <= 0.0:
         raise ValueError("latent MI clip must be positive")
+    if mi_token_scope not in {"answer", "full_response"}:
+        raise ValueError("latent MI token scope must be 'answer' or 'full_response'")
+    if mi_reduction not in {"mean", "sum"}:
+        raise ValueError("latent MI reduction must be 'mean' or 'sum'")
     if latent_count < 2:
         raise ValueError("latent_count must be at least two")
+    if ips_reward_mode not in {"replace", "bonus"}:
+        raise ValueError("IPS reward mode must be 'replace' or 'bonus'")
+    if ips_bonus_max < 0.0:
+        raise ValueError("IPS bonus maximum must be non-negative")
     shapes = {
         tuple(token_level_rewards.shape),
         tuple(response_mask.shape),
@@ -566,8 +578,12 @@ def compute_latent_ips_grpo_advantages(
     mi_contributions: list[float] = []
     assigned_answer_logps: list[float] = []
     negative_answer_logps: list[float] = []
+    assigned_trajectory_logps: list[float] = []
+    negative_trajectory_logps: list[float] = []
+    answer_mi_raw_values: list[float] = []
     weights: list[float] = []
     probabilities: list[float] = []
+    rarity_bonuses: list[float] = []
     valid_count = 0
     duplicate_valid_count = 0
     singleton_valid_count = 0
@@ -624,18 +640,19 @@ def compute_latent_ips_grpo_advantages(
 
         for row_index in group_indices:
             item = metadata[row_index]
-            if not item["valid"]:
-                continue
-            valid_count += 1
-            count = outcome_counts[item["behavior"]]
-            probability = count / group_size
-            denominator = max(probability, epsilon)
-            weight = 1.0 / denominator if use_ips else 1.0
-            singleton_valid_count += int(count == 1)
-            clipped_weight_count += int(use_ips and probability < epsilon)
-            weights.append(weight)
-            probabilities.append(probability)
-            row_weights[row_index] = weight
+            is_valid = bool(item["valid"])
+            weight = 1.0
+            if is_valid:
+                valid_count += 1
+                count = outcome_counts[item["behavior"]]
+                probability = count / group_size
+                denominator = max(probability, epsilon)
+                weight = 1.0 / denominator if use_ips else 1.0
+                singleton_valid_count += int(count == 1)
+                clipped_weight_count += int(use_ips and probability < epsilon)
+                weights.append(weight)
+                probabilities.append(probability)
+                row_weights[row_index] = weight
 
             active = torch.nonzero(
                 response_mask[row_index] > 0,
@@ -643,32 +660,70 @@ def compute_latent_ips_grpo_advantages(
             ).flatten()
             answer_count = min(int(item["answer_token_count"]), len(active))
             mi_raw = 0.0
+            answer_mi_raw = 0.0
             assigned_mean = 0.0
             negative_mean = 0.0
-            if answer_count > 0:
+            assigned_trajectory_mean = 0.0
+            negative_trajectory_mean = 0.0
+            mi_eligible = is_valid or not mi_valid_only
+            if mi_eligible and len(active) > 0:
+                trajectory_assigned = assigned_log_probs[row_index, active]
+                trajectory_negative = negative_log_probs[row_index, active]
+                assigned_trajectory_mean = float(trajectory_assigned.mean().item())
+                negative_trajectory_mean = float(trajectory_negative.mean().item())
+                if mi_token_scope == "answer":
+                    selected_indices = (
+                        active[-answer_count:] if answer_count > 0 else active[:0]
+                    )
+                else:
+                    selected_indices = active
+                selected_scores = _contrastive_token_scores(
+                    assigned_log_probs[row_index, selected_indices],
+                    negative_log_probs[row_index, selected_indices],
+                )
+                if len(selected_scores) > 0:
+                    reduced = (
+                        selected_scores.sum()
+                        if mi_reduction == "sum"
+                        else selected_scores.mean()
+                    )
+                    mi_raw = float(reduced.item())
+            if mi_eligible and answer_count > 0:
                 answer_indices = active[-answer_count:]
                 assigned = assigned_log_probs[row_index, answer_indices]
                 negative = negative_log_probs[row_index, answer_indices]
-                mi_raw = float(
+                answer_mi_raw = float(
                     _contrastive_token_scores(assigned, negative).mean().item()
                 )
                 assigned_mean = float(assigned.mean().item())
                 negative_mean = float(negative.mean().item())
             mi_clipped = max(-mi_clip, min(mi_clip, mi_raw))
             contribution = mi_alpha * mi_clipped
-            validity_reward = float(item["valid_reward"])
+            ips_adjustment = 0.0
+            if is_valid:
+                validity_reward = float(item["valid_reward"])
+                if use_ips and ips_reward_mode == "bonus":
+                    max_weight = 1.0 / epsilon
+                    normalized_rarity = (
+                        (weight - 1.0) / (max_weight - 1.0) if max_weight > 1.0 else 0.0
+                    )
+                    ips_adjustment = validity_reward * ips_bonus_max * normalized_rarity
+                    rarity_bonuses.append(ips_adjustment)
+                else:
+                    ips_adjustment = validity_reward * (weight - 1.0)
             shaped_scores[row_index] = (
-                raw_scores[row_index]
-                - validity_reward
-                + validity_reward * weight
-                + contribution
+                raw_scores[row_index] + ips_adjustment + contribution
             )
-            mi_raw_values.append(mi_raw)
-            mi_clipped_values.append(mi_clipped)
-            mi_contributions.append(contribution)
-            assigned_answer_logps.append(assigned_mean)
-            negative_answer_logps.append(negative_mean)
-            row_mi[row_index] = mi_raw
+            if mi_eligible:
+                mi_raw_values.append(mi_raw)
+                mi_clipped_values.append(mi_clipped)
+                mi_contributions.append(contribution)
+                answer_mi_raw_values.append(answer_mi_raw)
+                assigned_answer_logps.append(assigned_mean)
+                negative_answer_logps.append(negative_mean)
+                assigned_trajectory_logps.append(assigned_trajectory_mean)
+                negative_trajectory_logps.append(negative_trajectory_mean)
+                row_mi[row_index] = mi_raw
 
         group_scores = shaped_scores[group_indices]
         if len(group_indices) > 1:
@@ -685,11 +740,29 @@ def compute_latent_ips_grpo_advantages(
         return sum(values) / max(1, len(values))
 
     mi_tensor = torch.tensor(mi_raw_values, dtype=torch.float32)
+    configured_valid_rewards = [
+        float(item["valid_reward"])
+        for item in metadata
+        if float(item["valid_reward"]) > 0.0
+    ]
+    valid_reward_max = max(configured_valid_rewards, default=0.0)
     metrics = {
         "latent_ips/use_ips": float(use_ips),
         "latent_ips/epsilon": float(epsilon),
+        "latent_ips/ips_reward_mode_bonus": float(ips_reward_mode == "bonus"),
+        "latent_ips/ips_bonus_bound": float(ips_bonus_max if use_ips else 0.0),
+        "latent_ips/ips_bonus_mean": mean(rarity_bonuses),
+        "latent_ips/ips_bonus_max_observed": max(rarity_bonuses, default=0.0),
         "latent_ips/mi_alpha": float(mi_alpha),
         "latent_ips/mi_clip": float(mi_clip),
+        "latent_ips/mi_reward_bound": float(mi_alpha * mi_clip),
+        "latent_ips/valid_reward_max": valid_reward_max,
+        "latent_ips/mi_to_valid_reward_bound_ratio": (
+            mi_alpha * mi_clip / valid_reward_max if valid_reward_max > 0.0 else 0.0
+        ),
+        "latent_ips/mi_scope_full_response": float(mi_token_scope == "full_response"),
+        "latent_ips/mi_reduction_sum": float(mi_reduction == "sum"),
+        "latent_ips/mi_valid_only": float(mi_valid_only),
         "latent_ips/validity_rate": valid_count / max(1, total_rows),
         "latent_ips/raw_score_mean": float(raw_scores.mean().item()),
         "latent_ips/shaped_score_mean": float(shaped_scores.mean().item()),
@@ -700,8 +773,18 @@ def compute_latent_ips_grpo_advantages(
         ),
         "latent_ips/mi_clipped_mean": mean(mi_clipped_values),
         "latent_ips/mi_reward_mean": mean(mi_contributions),
+        "latent_ips/mi_reward_abs_mean": mean(
+            [abs(value) for value in mi_contributions]
+        ),
+        "latent_ips/mi_reward_max_abs": max(
+            (abs(value) for value in mi_contributions),
+            default=0.0,
+        ),
+        "latent_ips/mi_clip_rate": sum(abs(raw) >= mi_clip for raw in mi_raw_values)
+        / max(1, len(mi_raw_values)),
         "latent_ips/mi_nonzero_rate": sum(abs(value) > 1e-8 for value in mi_raw_values)
         / max(1, len(mi_raw_values)),
+        "latent_ips/answer_mi_raw_mean": mean(answer_mi_raw_values),
         "latent_ips/assigned_answer_logp_mean": mean(assigned_answer_logps),
         "latent_ips/negative_answer_logp_mean": mean(negative_answer_logps),
         "latent_ips/answer_logp_margin_mean": mean(
@@ -710,6 +793,18 @@ def compute_latent_ips_grpo_advantages(
                 for assigned, negative in zip(
                     assigned_answer_logps,
                     negative_answer_logps,
+                    strict=True,
+                )
+            ]
+        ),
+        "latent_ips/assigned_trajectory_logp_mean": mean(assigned_trajectory_logps),
+        "latent_ips/negative_trajectory_logp_mean": mean(negative_trajectory_logps),
+        "latent_ips/trajectory_logp_margin_mean": mean(
+            [
+                assigned - negative
+                for assigned, negative in zip(
+                    assigned_trajectory_logps,
+                    negative_trajectory_logps,
                     strict=True,
                 )
             ]
@@ -763,7 +858,7 @@ def compute_latent_ips_grpo_advantages(
         metrics[f"latent_ips/latent_{latent_id}/mi_raw_mean"] = mean(
             [
                 float(row_mi[row_index])
-                for row_index in valid_latent_rows
+                for row_index in latent_rows
                 if row_mi[row_index] is not None
             ]
         )
@@ -859,7 +954,12 @@ class IPSGRPOTrainerMixin:
         counterfactual_positions: list[Any] = []
         counterfactual_loss_masks: list[Any] = []
         scored_tokens = 0
-        for row_index, (prompt_row, response_row, response_mask_row, extra) in enumerate(
+        for row_index, (
+            prompt_row,
+            response_row,
+            response_mask_row,
+            extra,
+        ) in enumerate(
             zip(
                 prompt_rows,
                 response_rows,
@@ -1115,11 +1215,46 @@ class IPSGRPOTrainerMixin:
                     mi_clip=float(
                         _config_value(self._ips_config(), "latent_mi_clip", 1.0)
                     ),
+                    mi_token_scope=str(
+                        _config_value(
+                            self._ips_config(),
+                            "latent_mi_token_scope",
+                            "answer",
+                        )
+                    ),
+                    mi_reduction=str(
+                        _config_value(
+                            self._ips_config(),
+                            "latent_mi_reduction",
+                            "mean",
+                        )
+                    ),
+                    mi_valid_only=bool(
+                        _config_value(
+                            self._ips_config(),
+                            "latent_mi_valid_only",
+                            True,
+                        )
+                    ),
                     use_ips=bool(
                         _config_value(self._ips_config(), "latent_use_ips", True)
                     ),
                     latent_count=int(
                         _config_value(self._ips_config(), "latent_count", 8)
+                    ),
+                    ips_reward_mode=str(
+                        _config_value(
+                            self._ips_config(),
+                            "latent_ips_reward_mode",
+                            "replace",
+                        )
+                    ),
+                    ips_bonus_max=float(
+                        _config_value(
+                            self._ips_config(),
+                            "latent_ips_bonus_max",
+                            0.25,
+                        )
                     ),
                 )
             )
@@ -1201,9 +1336,7 @@ def build_ips_task_runner() -> Any:
             from verl.trainer.ppo.v1 import get_trainer_cls
 
             if not bool(config.trainer.use_v1):
-                raise RuntimeError(
-                    "IPSGRPOTaskRunner requires trainer.use_v1=True"
-                )
+                raise RuntimeError("IPSGRPOTaskRunner requires trainer.use_v1=True")
             base_cls = get_trainer_cls(config.trainer.v1.trainer_mode)
             trainer_cls = type(
                 f"IPSGRPO{base_cls.__name__}",

@@ -21,9 +21,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.run_config:
-        run_config = yaml.safe_load(
-            Path(args.run_config).read_text(encoding="utf-8")
-        )
+        run_config = yaml.safe_load(Path(args.run_config).read_text(encoding="utf-8"))
         assert run_config.get("trainer_use_v1") is True, (
             f"{args.run_config} must set trainer_use_v1: true"
         )
@@ -31,6 +29,34 @@ def main() -> None:
             run_config.get("trainer_entrypoint")
             == "scattered_discovery.verl.ips_grpo_main"
         )
+        if args.latent:
+            token_scope = run_config.get(
+                "ips_grpo_latent_mi_token_scope",
+                "answer",
+            )
+            reduction = run_config.get(
+                "ips_grpo_latent_mi_reduction",
+                "mean",
+            )
+            assert token_scope in {"answer", "full_response"}
+            assert reduction in {"mean", "sum"}
+            alpha = float(run_config.get("ips_grpo_latent_mi_alpha", 0.1))
+            clip = float(run_config.get("ips_grpo_latent_mi_clip", 1.0))
+            valid_reward = float(
+                run_config.get(
+                    "causal_micro_lab_valid_hypothesis_reward",
+                    1.0,
+                )
+            )
+            assert alpha * clip <= valid_reward, (
+                "latent reward bound exceeds the valid-hypothesis reward: "
+                f"{alpha * clip} > {valid_reward}"
+            )
+            ips_bonus = float(run_config.get("ips_grpo_latent_ips_bonus_max", 0.0))
+            assert alpha * clip + ips_bonus <= valid_reward, (
+                "combined diversity reward bounds exceed the valid-hypothesis "
+                f"reward: {alpha * clip + ips_bonus} > {valid_reward}"
+            )
 
     import torch
     import transfer_queue

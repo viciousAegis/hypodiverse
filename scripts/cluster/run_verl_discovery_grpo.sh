@@ -253,7 +253,12 @@ if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.ips_grpo_main" ]]; then
     +algorithm.ips_grpo.latent_negative_offset="${IPS_GRPO_LATENT_NEGATIVE_OFFSET:-1}"
     +algorithm.ips_grpo.latent_mi_alpha="${IPS_GRPO_LATENT_MI_ALPHA:-0.1}"
     +algorithm.ips_grpo.latent_mi_clip="${IPS_GRPO_LATENT_MI_CLIP:-1.0}"
+    +algorithm.ips_grpo.latent_mi_token_scope="${IPS_GRPO_LATENT_MI_TOKEN_SCOPE:-answer}"
+    +algorithm.ips_grpo.latent_mi_reduction="${IPS_GRPO_LATENT_MI_REDUCTION:-mean}"
+    +algorithm.ips_grpo.latent_mi_valid_only="${IPS_GRPO_LATENT_MI_VALID_ONLY:-true}"
     +algorithm.ips_grpo.latent_use_ips="${IPS_GRPO_LATENT_USE_IPS:-true}"
+    +algorithm.ips_grpo.latent_ips_reward_mode="${IPS_GRPO_LATENT_IPS_REWARD_MODE:-replace}"
+    +algorithm.ips_grpo.latent_ips_bonus_max="${IPS_GRPO_LATENT_IPS_BONUS_MAX:-0.25}"
   )
 fi
 
