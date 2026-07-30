@@ -1,15 +1,21 @@
 from __future__ import annotations
 
 import math
+import random
 from collections import Counter
 from dataclasses import dataclass
+from typing import Iterable
 
-from scattered_discovery.envs.causal_micro_lab.signatures import ModeTable, build_mode_table
+from scattered_discovery.envs.causal_micro_lab.signatures import (
+    ModeTable,
+    build_mode_table,
+)
 from scattered_discovery.envs.causal_micro_lab.state_generator import (
     EvidenceItem,
     EvidenceState,
     make_state,
 )
+from scattered_discovery.envs.causal_micro_lab.simulator import Outcome
 
 
 @dataclass(frozen=True)
@@ -35,6 +41,82 @@ def outcome_entropy(outcomes: list[tuple[int, int, int]]) -> float:
     return -sum((count / total) * math.log2(count / total) for count in counts.values())
 
 
+def available_experiment_ids(
+    state: EvidenceState,
+    *,
+    mode_table: ModeTable | None = None,
+) -> tuple[int, ...]:
+    table = mode_table or build_mode_table()
+    observed = set(state.observed_experiment_ids())
+    return tuple(
+        experiment.experiment_id
+        for experiment in table.experiments
+        if experiment.experiment_id not in observed
+    )
+
+
+def experiment_outcome_counts(
+    mode_ids: Iterable[str],
+    experiment_id: int,
+    *,
+    mode_table: ModeTable | None = None,
+) -> Counter[Outcome]:
+    table = mode_table or build_mode_table()
+    return Counter(
+        table.modes_by_id[mode_id].signature[experiment_id]
+        for mode_id in mode_ids
+        if mode_id in table.modes_by_id
+    )
+
+
+def experiment_entropy(
+    mode_ids: Iterable[str],
+    experiment_id: int,
+    *,
+    mode_table: ModeTable | None = None,
+) -> float:
+    counts = experiment_outcome_counts(
+        mode_ids,
+        experiment_id,
+        mode_table=mode_table,
+    )
+    return outcome_entropy(
+        [outcome for outcome, count in counts.items() for _ in range(count)]
+    )
+
+
+def prediction_distributions(
+    mode_ids: list[str],
+    state: EvidenceState,
+    *,
+    mode_table: ModeTable | None = None,
+) -> dict[int, dict[str, object]]:
+    table = mode_table or build_mode_table()
+    distributions: dict[int, dict[str, object]] = {}
+    for experiment_id in available_experiment_ids(state, mode_table=table):
+        counts = experiment_outcome_counts(
+            mode_ids,
+            experiment_id,
+            mode_table=table,
+        )
+        total = sum(counts.values())
+        outcomes = {
+            "".join(str(bit) for bit in outcome): {
+                "count": count,
+                "probability": count / total if total else 0.0,
+            }
+            for outcome, count in sorted(counts.items())
+        }
+        distributions[experiment_id] = {
+            "entropy": outcome_entropy(
+                [outcome for outcome, count in counts.items() for _ in range(count)]
+            ),
+            "outcomes": outcomes,
+            "sample_count": total,
+        }
+    return distributions
+
+
 def select_disagreement_experiment(
     generated_mode_ids: list[str],
     state: EvidenceState,
@@ -57,6 +139,18 @@ def select_disagreement_experiment(
         if best is None or candidate > best:
             best = candidate
     return -best[1] if best is not None else None
+
+
+def select_seeded_random_experiment(
+    state: EvidenceState,
+    *,
+    seed: int,
+    mode_table: ModeTable | None = None,
+) -> int | None:
+    available = available_experiment_ids(state, mode_table=mode_table)
+    if not available:
+        return None
+    return random.Random(seed).choice(available)
 
 
 def oracle_disagreement_experiment(

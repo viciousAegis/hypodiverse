@@ -172,6 +172,14 @@ class CausalMicroLabTests(unittest.TestCase):
         no_paren_unary = "Z1 = NOT X2\nZ2: COPY X2\nY: COPY X3"
         parsed = parse_hypothesis_rules(no_paren_unary)
         self.assertEqual(parsed.z1_rule.inputs, ("X2",))
+        shorthand = "Z1: X1 AND X2\nZ2: Z1\nY: X3"
+        parsed = parse_hypothesis_rules(shorthand)
+        self.assertEqual(parsed.z1_rule.operator, "AND")
+        self.assertEqual(parsed.z1_rule.inputs, ("X1", "X2"))
+        self.assertEqual(parsed.z2_rule.operator, "COPY")
+        self.assertEqual(parsed.z2_rule.inputs, ("Z1",))
+        self.assertEqual(parsed.y_rule.operator, "COPY")
+        self.assertEqual(parsed.y_rule.inputs, ("X3",))
 
         with self.assertRaises(HypothesisParseError):
             parse_hypothesis_json('{"rules": []}')
@@ -270,6 +278,8 @@ class CausalMicroLabTests(unittest.TestCase):
         self.assertIn("ANSWER 1", prompt)
         self.assertIn("ANSWER 4", prompt)
         self.assertIn("PROBABILITY: 0.25", prompt)
+        self.assertIn("Z2: COPY Z1", prompt)
+        self.assertIn("Z1: AND X1 X2", prompt)
         self.assertNotIn("<answer", prompt)
         self.assertNotIn("valid_mode_ids", prompt)
 

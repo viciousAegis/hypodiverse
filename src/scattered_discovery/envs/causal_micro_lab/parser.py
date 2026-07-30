@@ -39,6 +39,16 @@ _FLAT_RULE_LINE_RE = re.compile(
     r"^\s*(Z1|Z2|Y)\s*(?::|=|:=)?\s+(COPY|NOT|AND|OR|XOR)\s+([A-Za-z0-9_\s,]+?)\s*$",
     re.IGNORECASE,
 )
+_INFIX_RULE_LINE_RE = re.compile(
+    r"^\s*(Z1|Z2|Y)\s*(?::|=|:=)\s*"
+    r"([A-Za-z][A-Za-z0-9_]*)\s+(AND|OR|XOR)\s+"
+    r"([A-Za-z][A-Za-z0-9_]*)\s*$",
+    re.IGNORECASE,
+)
+_DIRECT_RULE_LINE_RE = re.compile(
+    r"^\s*(Z1|Z2|Y)\s*(?::|=|:=)\s*([A-Za-z][A-Za-z0-9_]*)\s*$",
+    re.IGNORECASE,
+)
 _ANSWER_TAG_RE = re.compile(
     r"<answer(?P<index>\d+)>\s*(?P<body>.*?)\s*</answer(?P=index)>",
     re.IGNORECASE | re.DOTALL,
@@ -105,14 +115,25 @@ def parse_hypothesis_rules(text: str):
             )
         else:
             match = _FLAT_RULE_LINE_RE.match(line)
-            if match is None:
-                raise HypothesisParseError(f"invalid rule line: {raw_line!r}")
-            target, operator, raw_inputs = match.groups()
-            inputs = tuple(
-                item.strip().upper()
-                for item in re.split(r"[\s,]+", raw_inputs)
-                if item.strip()
-            )
+            if match is not None:
+                target, operator, raw_inputs = match.groups()
+                inputs = tuple(
+                    item.strip().upper()
+                    for item in re.split(r"[\s,]+", raw_inputs)
+                    if item.strip()
+                )
+            else:
+                infix_match = _INFIX_RULE_LINE_RE.match(line)
+                if infix_match is not None:
+                    target, left_input, operator, right_input = infix_match.groups()
+                    inputs = (left_input.upper(), right_input.upper())
+                else:
+                    direct_match = _DIRECT_RULE_LINE_RE.match(line)
+                    if direct_match is None:
+                        raise HypothesisParseError(f"invalid rule line: {raw_line!r}")
+                    target, direct_input = direct_match.groups()
+                    operator = "COPY"
+                    inputs = (direct_input.upper(),)
         target = target.upper()
         operator = operator.upper()
         inputs = _canonicalize_inputs(target, operator, inputs)

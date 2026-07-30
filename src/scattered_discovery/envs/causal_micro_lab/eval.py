@@ -798,7 +798,9 @@ def evaluate_states(
                         "different hypotheses as plain ANSWER 1 through "
                         f"ANSWER {answer_count} blocks. Each block must contain only "
                         "Z1, Z2, Y, and PROBABILITY lines. Probabilities must be between "
-                        "0 and 1 and sum to 1. Do not think further or add other text."
+                        "0 and 1 and sum to 1. Every rule must begin with an operator. "
+                        "Use COPY for direct inputs and prefix syntax such as "
+                        "'Z1: AND X1 X2'. Do not think further or add other text."
                     )
                 else:
                     final_instruction = (
