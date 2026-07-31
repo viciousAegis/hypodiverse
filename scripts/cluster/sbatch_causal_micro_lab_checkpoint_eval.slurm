@@ -18,21 +18,24 @@ usage() {
   cat <<'EOF'
 Usage:
   sbatch scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
-    TRAINING_RUN {standard|latent}
+    TRAINING_RUN {standard|latent} [CHECKPOINT_STEP]
 
-The launcher selects the latest complete actor checkpoint, merges its FSDP
-shards into Hugging Face format, and evaluates K=16 on final_v1. K=4,8,12
-metrics are derived from the same completion bank.
+The launcher uses CHECKPOINT_STEP when supplied, otherwise selects the latest
+complete actor checkpoint. It merges FSDP shards into Hugging Face format only
+when a complete merged model is not already present. EVAL_CONFIG and RUN_NAME
+may be supplied through the job environment. K=4,8,12 metrics are derived from
+the same K=16 completion bank.
 EOF
 }
 
-if [[ "$#" -ne 2 ]]; then
+if [[ "$#" -lt 2 || "$#" -gt 3 ]]; then
   usage >&2
   exit 2
 fi
 
 TRAINING_RUN="$1"
 EVAL_MODE="$2"
+REQUESTED_STEP="${3:-}"
 case "$EVAL_MODE" in
   standard|latent) ;;
   *)
@@ -75,29 +78,41 @@ if [[ ! -d "$RUN_ROOT" ]]; then
   exit 1
 fi
 
-STEP=""
-TRACKER="$RUN_ROOT/latest_checkpointed_iteration.txt"
-if [[ -f "$TRACKER" ]]; then
-  TRACKED_STEP="$(tr -d '[:space:]' < "$TRACKER")"
-  if [[ "$TRACKED_STEP" =~ ^[0-9]+$ ]]; then
-    TRACKED_ACTOR="$RUN_ROOT/global_step_$TRACKED_STEP/actor"
-    if compgen -G "$TRACKED_ACTOR/model_world_size_*_rank_*.pt" >/dev/null; then
-      STEP="$TRACKED_STEP"
+STEP="$REQUESTED_STEP"
+if [[ -n "$STEP" ]]; then
+  if [[ ! "$STEP" =~ ^[0-9]+$ ]]; then
+    echo "CHECKPOINT_STEP must be a non-negative integer, got: $STEP" >&2
+    exit 2
+  fi
+  REQUESTED_ACTOR="$RUN_ROOT/global_step_$STEP/actor"
+  if ! compgen -G "$REQUESTED_ACTOR/model_world_size_*_rank_*.pt" >/dev/null; then
+    echo "Requested checkpoint is missing FSDP model shards: $REQUESTED_ACTOR" >&2
+    exit 1
+  fi
+else
+  TRACKER="$RUN_ROOT/latest_checkpointed_iteration.txt"
+  if [[ -f "$TRACKER" ]]; then
+    TRACKED_STEP="$(tr -d '[:space:]' < "$TRACKER")"
+    if [[ "$TRACKED_STEP" =~ ^[0-9]+$ ]]; then
+      TRACKED_ACTOR="$RUN_ROOT/global_step_$TRACKED_STEP/actor"
+      if compgen -G "$TRACKED_ACTOR/model_world_size_*_rank_*.pt" >/dev/null; then
+        STEP="$TRACKED_STEP"
+      fi
     fi
   fi
-fi
 
-if [[ -z "$STEP" ]]; then
-  while IFS= read -r candidate; do
-    actor_dir="$candidate/actor"
-    if compgen -G "$actor_dir/model_world_size_*_rank_*.pt" >/dev/null; then
-      STEP="${candidate##*/global_step_}"
-      break
-    fi
-  done < <(
-    find "$RUN_ROOT" -maxdepth 1 -type d -name 'global_step_*' -print \
-      | sort -Vr
-  )
+  if [[ -z "$STEP" ]]; then
+    while IFS= read -r candidate; do
+      actor_dir="$candidate/actor"
+      if compgen -G "$actor_dir/model_world_size_*_rank_*.pt" >/dev/null; then
+        STEP="${candidate##*/global_step_}"
+        break
+      fi
+    done < <(
+      find "$RUN_ROOT" -maxdepth 1 -type d -name 'global_step_*' -print \
+        | sort -Vr
+    )
+  fi
 fi
 
 if [[ -z "$STEP" ]]; then
@@ -125,12 +140,12 @@ else
   echo "Reusing merged model: $MODEL_PATH"
 fi
 
-RUN_NAME="${TRAINING_RUN}_global_step_${STEP}_final_k16"
+RUN_NAME="${RUN_NAME:-${TRAINING_RUN}_global_step_${STEP}_final_k16}"
 if [[ "$EVAL_MODE" == "latent" ]]; then
-  EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_latent.yaml"
+  EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_final_k16_latent.yaml}"
   LATENT_COUNT=8
 else
-  EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_base.yaml"
+  EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_final_k16_base.yaml}"
   LATENT_COUNT=0
 fi
 

@@ -31,6 +31,7 @@ METRICS = (
     "family_coverage",
     "generated_mode_separation",
     "generated_to_available_separation",
+    "predictive_diversity_recovery",
 )
 CONDITIONAL_METRICS = (
     ("modes_recovered_given_success", "num_unique_valid_modes"),
@@ -52,6 +53,7 @@ CONDITIONAL_METRICS = (
 )
 PRIMARY_METRICS = (
     "pass_at_k",
+    "predictive_diversity_recovery",
     "modes_recovered_given_success",
     "fraction_modes_recovered_given_success",
 )
@@ -175,6 +177,9 @@ def _aggregate_primary_rows(
                 "support_states": len(items),
                 "successful_states": len(successes),
                 "pass_at_k": _mean([float(item["pass_at_k"]) for item in items]),
+                "predictive_diversity_recovery": _mean(
+                    [float(item["predictive_diversity_recovery"]) for item in items]
+                ),
                 "modes_recovered_given_success": _mean(
                     [float(item["num_unique_valid_modes"]) for item in successes]
                 ),

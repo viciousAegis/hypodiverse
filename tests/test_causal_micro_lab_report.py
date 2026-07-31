@@ -43,6 +43,7 @@ def _metric_row(
         "duplicity": 0.0,
         "generated_mode_separation": 0.0,
         "generated_to_available_separation": 0.0,
+        "predictive_diversity_recovery": exact_coverage,
     }
 
 
@@ -71,6 +72,7 @@ class CausalMicroLabReportTests(unittest.TestCase):
         self.assertEqual(result["support_states"], 4)
         self.assertEqual(result["successful_states"], 2)
         self.assertEqual(result["pass_at_k"], 0.5)
+        self.assertEqual(result["predictive_diversity_recovery"], 0.1875)
         self.assertEqual(result["modes_recovered_given_success"], 1.5)
         self.assertEqual(
             result["fraction_modes_recovered_given_success"],
@@ -133,10 +135,7 @@ class CausalMicroLabReportTests(unittest.TestCase):
             "support_states,successful_states,mean,ci95_low,ci95_high,"
             "bootstrap_samples\n"
         )
-        row = (
-            "by_k_m,16,4,,,pass_at_k,all_states,"
-            "24,20,0.8,0.6,0.9,1000\n"
-        )
+        row = "by_k_m,16,4,,,pass_at_k,all_states,24,20,0.8,0.6,0.9,1000\n"
 
         class FakeTable:
             def __init__(self, *, columns, data):
@@ -193,9 +192,7 @@ class CausalMicroLabReportTests(unittest.TestCase):
         self.assertEqual(len(run.logged), 2)
         self.assertIn("eval_tables/bootstrap_ci95", run.logged[0])
         self.assertEqual(
-            run.logged[1][
-                "bootstrap_ci95/by_k_m/K_16/M_4/pass_at_k/ci95_low"
-            ],
+            run.logged[1]["bootstrap_ci95/by_k_m/K_16/M_4/pass_at_k/ci95_low"],
             0.6,
         )
         self.assertEqual(len(run.artifacts), 1)

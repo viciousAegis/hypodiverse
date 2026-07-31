@@ -182,7 +182,8 @@ Each run writes a per-sample `summary.json` and a grouped set-level
 `set_summary.json`. The grouped summary reports `pass_at_k`, exact coverage,
 budget-normalized coverage, effective mode count, family coverage, duplicate
 valid modes, unavoidable duplicate valid modes, and extra duplicate valid modes,
-sliced by `M`, separation bucket, and family bucket.
+sliced by `M` and family bucket. Legacy sets retain categorical separation
+slices; v2 analysis uses each state's continuous `mean_separation` value.
 
 For the cleanest k comparison, run the `k=16` config and use its prefix
 summaries:
@@ -190,6 +191,7 @@ summaries:
 ```text
 set_summary_k4.json
 set_summary_k8.json
+set_summary_k12.json
 set_summary_k16.json
 ```
 
@@ -197,28 +199,70 @@ Those three files are computed from the same generated sample slots
 `sample0000` through `sample0015`, so `k=4` is the first four samples of the
 same `k=16` run rather than a separate stochastic eval.
 
-## Frozen final comparison eval
+## Frozen continuous-separation comparison eval v2
 
-The replacement comparison set is committed under:
+The continuous-separation comparison set is committed under:
 
 ```text
-eval_sets/causal_micro_lab/final_v1/
+eval_sets/causal_micro_lab/final_v2/
 ```
 
-It contains 96 states: 24 each for `M={4,8,12,16}`. Every `M` cell contains
-eight low-, eight medium-, and eight high-separation states, and every row uses
-a distinct held-out hidden mode. Its manifest records SHA-256 hashes and the
-zero-overlap audit against the previous canonical validation/test set.
+It contains 192 states: 48 each for `M={4,8,12,16}`. For every `M`, states are
+chosen near 48 evenly spaced values across the empirically supported continuous
+positive target-`Y` separation interval. Zero-separation states remain in the
+characterization bank but are excluded because they contain no predictive
+diversity to recover. No low/medium/high labels are used. Every row
+uses a distinct held-out hidden mode, version space, and visible evidence
+prompt. Its manifest records the range, percentiles, largest adjacent gap,
+SHA-256 hashes, and a zero-overlap audit against existing training, validation,
+debug, and legacy evaluation states.
 
-Run the Qwen3-4B base-model evaluation on one cluster GPU with:
+The CPU-only construction is reproducible:
 
 ```bash
-sbatch scripts/cluster/sbatch_causal_micro_lab_final_eval.slurm
+PYTHONPATH=src python scripts/build_causal_micro_lab_diversity_characterization.py
+PYTHONPATH=src python scripts/build_causal_micro_lab_final_eval_v2.py
 ```
+
+The first command recomputes continuous predictive separation for the larger
+characterization bank. The second deterministically freezes 48 states per `M`
+across the supported axis and fails if any split or prompt overlap is detected.
+The v1 files and config remain unchanged for reproducing older experiments.
+
+Submit the four model evaluations independently so that failures and reruns are
+isolated:
+
+```bash
+V2=configs/verl/eval/causal_micro_lab_final_k16_base_v2.yaml
+
+sbatch --job-name=cml-v2-base --time=03:00:00 \
+  --export=ALL,EVAL_CONFIG="$V2" \
+  scripts/cluster/sbatch_causal_micro_lab_final_eval.slurm
+
+sbatch --job-name=cml-v2-validity --time=03:00:00 \
+  --export=ALL,EVAL_CONFIG="$V2",RUN_NAME=causal_micro_lab_final_v2_k16_validity \
+  scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
+  causal_micro_lab_cluster_validity_grpo_r1 standard 90
+
+sbatch --job-name=cml-v2-ips --time=03:00:00 \
+  --export=ALL,EVAL_CONFIG="$V2",RUN_NAME=causal_micro_lab_final_v2_k16_ips \
+  scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
+  causal_micro_lab_cluster_ips_grpo_v1_eps02_r1 standard 60
+
+sbatch --job-name=cml-v2-latent --time=03:00:00 \
+  --export=ALL,EVAL_CONFIG="$V2",RUN_NAME=causal_micro_lab_final_v2_k16_latent_ips \
+  scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
+  causal_micro_lab_cluster_latent_ips_grpo_v2_fulltraj_k8_r1 latent 55
+```
+
+The trained-model jobs use the existing checkpoint evaluator. Each independently
+merges its veRL FSDP shards with the standard `verl.model_merger` only when its
+complete Hugging Face merge is absent, then starts SGLang and evaluates the
+frozen v2 set. The steps are pinned to Validity 90, IPS-v1 60, and Latent-v2 55.
 
 The run samples `K=16` independent completions per state and derives
 `K={4,8,12}` from stable prefixes of the same bank. Each primary request gets
-4096 response tokens with Qwen thinking enabled. A request ending with
+6000 response tokens with Qwen thinking enabled. A request ending with
 `finish_reason=length` is automatically finalized by a short deterministic
 second request with thinking disabled and the original reasoning supplied as
 context.
@@ -226,16 +270,17 @@ context.
 Results and live W&B metrics are written under:
 
 ```text
-artifacts/causal_micro_lab_final_eval/
+artifacts/causal_micro_lab_final_eval_v2/
 ```
 
 The `latest/report/` directory contains CSV tables for bootstrap confidence
-intervals, per-state metrics, `K x M x separation` slices, and mode
+intervals, per-state metrics with continuous separation, and mode
 reachability. Corresponding comparison plots are logged to W&B. Important
 outputs include exact and
 budget-normalized coverage, valid-output rate, duplicity among valid outputs,
 dominant-mode mass, effective mode count, mechanism-family coverage, generated
-consequence separation, cap-hit rate, and fallback success.
+consequence separation, oracle-normalized predictive diversity recovery
+(`PDR@K`), cap-hit rate, and fallback success.
 
 ## CD-GRPO on the Slurm cluster
 

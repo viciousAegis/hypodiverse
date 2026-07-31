@@ -319,7 +319,7 @@ The dataset generator should control two axes exactly and annotate two others.
 Generate states with:
 
 ```text
-M in {2, 4, 8, 16}
+M in {4, 8, 12, 16}
 ```
 
 where:
@@ -332,31 +332,54 @@ This is exact underdetermination.
 
 ### 6.2 Primary control B: predictive separation
 
-For two valid modes, calculate disagreement over experiments that have not yet been observed:
+Mode identity continues to use the complete interventional signature over
+`(Z1, Z2, Y)`. Predictive separation instead measures disagreement on a
+designated scientific prediction target. The default target is `Y`; target
+channels remain configurable so that the metric is a property of predictions,
+not of a hard-coded variable name.
+
+Let `Q(E)` be the experiments that have not yet been observed. For two valid
+modes, calculate target-outcome disagreement:
 
 \[
-d(h_i,h_j)=\frac{1}{3|\mathcal A\setminus E|}\sum_{a\notin E}\operatorname{Hamming}(\sigma_a(h_i),\sigma_a(h_j))
+d_Y(h_i,h_j)=\frac{1}{|Q(E)|}\sum_{q\in Q(E)}
+\mathbf 1\!\left[Y_{h_i}(q)\neq Y_{h_j}(q)\right]
 \]
 
 For a state:
 
 \[
-\bar d(E)=\frac{2}{M(M-1)}\sum_{i<j}d(h_i,h_j)
+\bar d_Y(E)=\frac{2}{M(M-1)}\sum_{i<j}d_Y(h_i,h_j)
 \]
 
 Also store:
 
 \[
-d_{\min}(E)=\min_{i\neq j}d(h_i,h_j)
+d_{\min}(E)=\min_{i\neq j}d_Y(h_i,h_j)
 \]
 
-Bucket states separately for each `M`:
+For binary predictions, the maximum mean pairwise disagreement at one query is
 
-```text
-low separation:     bottom 30%
-medium separation:  middle 40%
-high separation:    top 30%
-```
+\[
+B_M=\frac{\lfloor M^2/4\rfloor}{\binom{M}{2}}.
+\]
+
+Also report the cross-`M` normalized value
+
+\[
+\widetilde d(E)=\frac{\bar d_Y(E)}{B_M}.
+\]
+
+Treat separation as a continuous control variable. Store the exact value
+`mean_separation` for every state and do not assign semantic labels such as
+low, medium, or high. To construct a finite evaluation set, choose states near
+evenly spaced target values across the empirically supported interval for each
+`M`. These target points are a sampling device only; evaluation and statistical
+analysis use the raw continuous value. Report the selected range, percentiles,
+and largest adjacent gap so that coverage of the axis is auditable. Retain
+zero-separation states in the characterization bank, but exclude them from the
+primary comparison set because no method can recover predictive diversity when
+all valid hypotheses make identical target predictions.
 
 ### 6.3 Secondary annotation C: mechanism-family diversity
 
@@ -463,7 +486,8 @@ Suggested ranking:
 
 Whenever `|V(E)| = M`, save the state.
 
-After collecting a large candidate bank, calculate separation and family buckets and balance the dataset.
+After collecting a large candidate bank, calculate continuous predictive
+separation and select states to cover its supported range for each `M`.
 
 ### 7.2 Avoid duplicate states
 
@@ -499,7 +523,7 @@ Each state should be serialized approximately as:
   "available_experiment_ids": [0, 1, 4, 7],
   "metadata": {
     "valid_mode_count": 8,
-    "separation_bucket": "high",
+    "separation_bucket": "continuous",
     "mean_separation": 0.43,
     "minimum_separation": 0.17,
     "family_bucket": "cross_family",
@@ -612,6 +636,7 @@ Group-level evaluation:
   "available_valid_modes": 8,
   "exact_coverage": 0.625,
   "budget_normalized_coverage": 0.625,
+  "predictive_diversity_recovery": 0.71,
   "effective_mode_count": 4.2,
   "family_coverage": 0.75
 }
@@ -628,6 +653,25 @@ Because this is bounded by `G/M`, also report:
 \[
 \text{BudgetCoverage@}G=\frac{|\{\text{valid generated mode IDs}\}|}{\min(G,M)}
 \]
+
+The primary diversity metric is Predictive Diversity Recovery. For a generation
+budget `K`, invalid hypotheses and repeated semantic modes contribute zero
+pairwise mass:
+
+\[
+\operatorname{PDR@K}=
+\frac{
+\sum_{i<j}d_Y(\hat h_i,\hat h_j)
+\mathbf 1[\hat h_i,\hat h_j\in V(E),\,\hat h_i\neq\hat h_j]
+}{
+\max_{T\subseteq V(E),\,|T|\leq K}
+\sum_{\{u,v\}\subseteq T}d_Y(u,v)
+}.
+\]
+
+The denominator is computed exactly. With `M <= 16`, exhaustive subset search
+is small enough for local evaluation. Primary rankings use cells with `K <= M`
+so that the hypothesis budget is genuinely constrained.
 
 ---
 
@@ -912,8 +956,8 @@ Before serious training, verify:
 ```text
 ✓ all syntactic programs enumerate deterministically
 ✓ semantic-equivalence grouping is stable
-✓ states exist for M = 2, 4, 8, 16
-✓ all three separation buckets are populated
+✓ states exist for M = 4, 8, 12, 16
+✓ continuous separation coverage is broad and has no large unsupported gaps
 ✓ random valid-mode targets pass the verifier
 ✓ invalid modes fail the verifier
 ✓ oracle mode-conditioned generation reaches full budget coverage

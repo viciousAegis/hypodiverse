@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import math
 from statistics import quantiles
 
 from scattered_discovery.envs.causal_micro_lab.interventions import Experiment
+from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
+    DEFAULT_PREDICTION_TARGET,
+    prediction_target_names,
+    separation_for_modes as predictive_separation_for_modes,
+    theoretical_binary_pairwise_max,
+)
 from scattered_discovery.envs.causal_micro_lab.signatures import (
     ModeRecord,
     ModeTable,
@@ -14,6 +20,12 @@ from scattered_discovery.envs.causal_micro_lab.signatures import (
 from scattered_discovery.envs.causal_micro_lab.simulator import Outcome
 
 _OUTCOME_INDEX_CACHE: dict[int, dict[tuple[int, Outcome], frozenset[int]]] = {}
+
+DEFAULT_ABSOLUTE_SEPARATION_BANDS: tuple[tuple[str, float, float], ...] = (
+    ("low", 0.03, 0.12),
+    ("medium", 0.20, 0.30),
+    ("high", 0.36, 0.50),
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +93,16 @@ class EvidenceState:
                 "mean_separation": self.mean_separation,
                 "minimum_separation": self.minimum_separation,
                 "maximum_separation": self.maximum_separation,
+                "normalized_mean_separation": (
+                    self.mean_separation
+                    / theoretical_binary_pairwise_max(self.valid_mode_count)
+                    if self.valid_mode_count > 1
+                    else 0.0
+                ),
+                "separation_definition": "predictive_target_disagreement_v2",
+                "separation_targets": list(
+                    prediction_target_names(DEFAULT_PREDICTION_TARGET)
+                ),
                 "family_bucket": self.family_bucket,
                 "evidence_size": self.evidence_size,
             },
@@ -94,7 +116,9 @@ class EvidenceState:
 
 
 def _state_id(hidden_mode_id: str, evidence_ids: tuple[int, ...]) -> str:
-    payload = hidden_mode_id + ":" + ",".join(str(item) for item in sorted(evidence_ids))
+    payload = (
+        hidden_mode_id + ":" + ",".join(str(item) for item in sorted(evidence_ids))
+    )
     return hashlib.sha256(payload.encode("ascii")).hexdigest()[:24]
 
 
@@ -147,39 +171,21 @@ def separation_for_modes(
     mode_ids: tuple[str, ...],
     observed_experiment_ids: tuple[int, ...],
     *,
+    target_indices: tuple[int, ...] = DEFAULT_PREDICTION_TARGET,
     mode_table: ModeTable | None = None,
 ) -> tuple[float, float, float]:
-    table = mode_table or build_mode_table()
-    if len(mode_ids) < 2:
-        return (0.0, 0.0, 0.0)
-    observed = set(observed_experiment_ids)
-    unobserved = [
-        experiment.experiment_id
-        for experiment in table.experiments
-        if experiment.experiment_id not in observed
-    ]
-    if not unobserved:
-        return (0.0, 0.0, 0.0)
-    distances: list[float] = []
-    for left_index, left_id in enumerate(mode_ids):
-        left = table.modes_by_id[left_id]
-        for right_id in mode_ids[left_index + 1 :]:
-            right = table.modes_by_id[right_id]
-            hamming = 0
-            for experiment_id in unobserved:
-                hamming += sum(
-                    int(a != b)
-                    for a, b in zip(
-                        left.signature[experiment_id],
-                        right.signature[experiment_id],
-                        strict=True,
-                    )
-                )
-            distances.append(hamming / (3 * len(unobserved)))
-    return (sum(distances) / len(distances), min(distances), max(distances))
+    summary = predictive_separation_for_modes(
+        mode_ids,
+        observed_experiment_ids,
+        target_indices=target_indices,
+        mode_table=mode_table,
+    )
+    return (summary.mean, summary.minimum, summary.maximum)
 
 
-def family_bucket(mode_ids: tuple[str, ...], *, mode_table: ModeTable | None = None) -> str:
+def family_bucket(
+    mode_ids: tuple[str, ...], *, mode_table: ModeTable | None = None
+) -> str:
     table = mode_table or build_mode_table()
     families = {table.modes_by_id[mode_id].family for mode_id in mode_ids}
     if len(families) <= 1:
@@ -223,6 +229,66 @@ def assign_separation_buckets(states: list[EvidenceState]) -> list[EvidenceState
     return sorted(updated, key=lambda item: (item.valid_mode_count, item.state_id))
 
 
+def _validated_absolute_bands(
+    bands: tuple[tuple[str, float, float], ...],
+    tolerance: float,
+) -> tuple[tuple[str, float, float], ...]:
+    if tolerance < 0.0:
+        raise ValueError("separation-band tolerance must be nonnegative")
+    ordered_bands = tuple(sorted(bands, key=lambda item: (item[1], item[2], item[0])))
+    previous_high = -math.inf
+    for label, low, high in ordered_bands:
+        if not label:
+            raise ValueError("separation band labels must be nonempty")
+        if low < 0.0 or high > 1.0 or low > high:
+            raise ValueError(f"invalid separation band {label!r}: [{low}, {high}]")
+        if low <= previous_high:
+            raise ValueError("absolute separation bands must not overlap")
+        previous_high = high
+    return ordered_bands
+
+
+def absolute_separation_bucket(
+    value: float,
+    *,
+    bands: tuple[tuple[str, float, float], ...] = DEFAULT_ABSOLUTE_SEPARATION_BANDS,
+    outside_label: str = "out_of_band",
+    tolerance: float = 1e-12,
+) -> str:
+    for label, low, high in _validated_absolute_bands(bands, tolerance):
+        if low - tolerance <= value <= high + tolerance:
+            return label
+    return outside_label
+
+
+def assign_absolute_separation_buckets(
+    states: list[EvidenceState],
+    *,
+    bands: tuple[tuple[str, float, float], ...] = DEFAULT_ABSOLUTE_SEPARATION_BANDS,
+    outside_label: str = "out_of_band",
+    tolerance: float = 1e-12,
+) -> list[EvidenceState]:
+    ordered_bands = _validated_absolute_bands(bands, tolerance)
+
+    updated = []
+    for state in states:
+        bucket = next(
+            (
+                label
+                for label, low, high in ordered_bands
+                if low - tolerance <= state.mean_separation <= high + tolerance
+            ),
+            outside_label,
+        )
+        updated.append(
+            replace(
+                state,
+                separation_bucket=bucket,
+            )
+        )
+    return sorted(updated, key=lambda item: (item.valid_mode_count, item.state_id))
+
+
 def make_state(
     *,
     hidden_mode: ModeRecord,
@@ -232,7 +298,9 @@ def make_state(
 ) -> EvidenceState:
     table = mode_table or build_mode_table()
     evidence = tuple(
-        EvidenceItem(experiment_id=experiment_id, outcome=hidden_mode.signature[experiment_id])
+        EvidenceItem(
+            experiment_id=experiment_id, outcome=hidden_mode.signature[experiment_id]
+        )
         for experiment_id in sorted(evidence_ids)
     )
     valid_mode_ids = valid_modes_for_evidence(evidence, mode_table=table)
@@ -246,7 +314,9 @@ def make_state(
     else:
         mean_sep, min_sep, max_sep, bucket = 0.0, 0.0, 0.0, "unknown"
     return EvidenceState(
-        state_id=_state_id(hidden_mode.mode_id, tuple(item.experiment_id for item in evidence)),
+        state_id=_state_id(
+            hidden_mode.mode_id, tuple(item.experiment_id for item in evidence)
+        ),
         hidden_mode_id=hidden_mode.mode_id,
         evidence=evidence,
         valid_mode_ids=valid_mode_ids,
@@ -267,7 +337,9 @@ def _make_state_from_indices(
     compute_separation: bool = True,
 ) -> EvidenceState:
     evidence = tuple(
-        EvidenceItem(experiment_id=experiment_id, outcome=hidden_mode.signature[experiment_id])
+        EvidenceItem(
+            experiment_id=experiment_id, outcome=hidden_mode.signature[experiment_id]
+        )
         for experiment_id in sorted(evidence_ids)
     )
     valid_mode_ids = tuple(
@@ -283,7 +355,9 @@ def _make_state_from_indices(
     else:
         mean_sep, min_sep, max_sep, bucket = 0.0, 0.0, 0.0, "unknown"
     return EvidenceState(
-        state_id=_state_id(hidden_mode.mode_id, tuple(item.experiment_id for item in evidence)),
+        state_id=_state_id(
+            hidden_mode.mode_id, tuple(item.experiment_id for item in evidence)
+        ),
         hidden_mode_id=hidden_mode.mode_id,
         evidence=evidence,
         valid_mode_ids=valid_mode_ids,
@@ -323,7 +397,10 @@ def find_states(
                     continue
                 next_ids = tuple(sorted((*evidence_ids, experiment.experiment_id)))
                 matching_indices = outcome_index.get(
-                    (experiment.experiment_id, hidden.signature[experiment.experiment_id]),
+                    (
+                        experiment.experiment_id,
+                        hidden.signature[experiment.experiment_id],
+                    ),
                     frozenset(),
                 )
                 next_valid_indices = valid_indices.intersection(matching_indices)

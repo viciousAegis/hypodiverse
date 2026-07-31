@@ -121,6 +121,7 @@ def _log_wandb_set_plots(
         "effective_mode_count",
         "family_coverage",
         "generated_mode_separation",
+        "predictive_diversity_recovery",
     )
     table_columns = ["K", "M", *metrics]
     table_data = []
@@ -167,35 +168,43 @@ def _log_wandb_set_plots(
             }
         )
 
-    separation_buckets = ("low", "medium", "high")
-    for metric in (
-        "exact_coverage",
-        "duplicity",
-        "effective_mode_count",
-        "generated_mode_separation",
-    ):
-        wandb_run.log(
-            {
-                f"eval_plots/{metric}_by_separation": wandb.plot.line_series(
-                    xs=ks,
-                    ys=[
-                        [
-                            float(
-                                summaries_by_k[k]
-                                .get("by_separation_bucket", {})
-                                .get(bucket, {})
-                                .get(metric, 0.0)
-                            )
-                            for k in ks
-                        ]
-                        for bucket in separation_buckets
-                    ],
-                    keys=list(separation_buckets),
-                    title=f"{metric.replace('_', ' ').title()} by Separation",
-                    xname="K",
-                )
-            }
-        )
+    separation_labels = sorted(
+        {
+            label
+            for summary in summaries_by_k.values()
+            for label in summary.get("by_separation_bucket", {})
+        }
+    )
+    if len(separation_labels) > 1:
+        for metric in (
+            "exact_coverage",
+            "duplicity",
+            "effective_mode_count",
+            "generated_mode_separation",
+            "predictive_diversity_recovery",
+        ):
+            wandb_run.log(
+                {
+                    f"eval_plots/{metric}_by_separation": wandb.plot.line_series(
+                        xs=ks,
+                        ys=[
+                            [
+                                float(
+                                    summaries_by_k[k]
+                                    .get("by_separation_bucket", {})
+                                    .get(label, {})
+                                    .get(metric, 0.0)
+                                )
+                                for k in ks
+                            ]
+                            for label in separation_labels
+                        ],
+                        keys=separation_labels,
+                        title=f"{metric.replace('_', ' ').title()} by Separation",
+                        xname="K",
+                    )
+                }
+            )
 
 
 def _coerce_csv_value(value: str) -> str | int | float | None:
@@ -260,6 +269,7 @@ def _log_wandb_bootstrap_report(
 
     primary_metrics = {
         "pass_at_k",
+        "predictive_diversity_recovery",
         "modes_recovered_given_success",
         "fraction_modes_recovered_given_success",
     }

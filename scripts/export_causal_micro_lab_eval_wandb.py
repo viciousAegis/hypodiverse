@@ -5,6 +5,7 @@ import csv
 import json
 import os
 from pathlib import Path
+import re
 from typing import Any
 
 import matplotlib.pyplot as plt
@@ -34,6 +35,7 @@ SET_METRICS = (
     "duplicate_rate",
     "generated_mode_separation",
     "generated_to_available_separation",
+    "predictive_diversity_recovery",
 )
 SAMPLE_METRICS = (
     "parse_valid",
@@ -103,9 +105,19 @@ def _extract_tables(
     ks: tuple[int, ...],
     ms: tuple[int, ...],
 ) -> dict[str, list[dict[str, Any]]]:
-    overall = [
-        _row(summary, prefix=f"set_summary_k{k}", labels={"K": k}) for k in ks
-    ]
+    separation_labels = sorted(
+        {
+            match.group(1)
+            for key in summary
+            if (
+                match := re.search(
+                    r"/by_separation_bucket/([^/]+)/",
+                    str(key),
+                )
+            )
+        }
+    ) or ["continuous"]
+    overall = [_row(summary, prefix=f"set_summary_k{k}", labels={"K": k}) for k in ks]
     by_k_m = [
         _row(
             summary,
@@ -122,19 +134,17 @@ def _extract_tables(
             labels={"K": k, "separation_bucket": bucket},
         )
         for k in ks
-        for bucket in ("low", "medium", "high")
+        for bucket in separation_labels
     ]
     by_k_m_separation = [
         _row(
             summary,
-            prefix=(
-                f"set_summary_k{k}/by_M_and_separation_bucket/{m}/{bucket}"
-            ),
+            prefix=(f"set_summary_k{k}/by_M_and_separation_bucket/{m}/{bucket}"),
             labels={"K": k, "M": m, "separation_bucket": bucket},
         )
         for k in ks
         for m in ms
-        for bucket in ("low", "medium", "high")
+        for bucket in separation_labels
     ]
     by_k_family = [
         _row(
@@ -160,6 +170,10 @@ def _extract_tables(
             "M": row["M"],
             "support_states": row.get("states", 0.0),
             "pass_at_k": row.get("pass_at_k", 0.0),
+            "predictive_diversity_recovery": row.get(
+                "predictive_diversity_recovery",
+                0.0,
+            ),
             "modes_recovered_given_success": row.get(
                 "num_unique_valid_modes_given_pass",
                 0.0,
@@ -177,6 +191,10 @@ def _extract_tables(
             "separation_bucket": row["separation_bucket"],
             "support_states": row.get("states", 0.0),
             "pass_at_k": row.get("pass_at_k", 0.0),
+            "predictive_diversity_recovery": row.get(
+                "predictive_diversity_recovery",
+                0.0,
+            ),
             "modes_recovered_given_success": row.get(
                 "num_unique_valid_modes_given_pass",
                 0.0,
@@ -322,6 +340,11 @@ def _plot_primary_metrics(
     panels = (
         ("pass_at_k", "Pass@K", "Probability"),
         (
+            "predictive_diversity_recovery",
+            "Predictive diversity recovery",
+            "Oracle-normalized PDR@K",
+        ),
+        (
             "modes_recovered_given_success",
             "Modes recovered given success",
             "Distinct valid modes",
@@ -332,7 +355,7 @@ def _plot_primary_metrics(
             "Fraction of M",
         ),
     )
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.4), sharex=True)
+    fig, axes = plt.subplots(1, 4, figsize=(19, 4.4), sharex=True)
     for axis, (metric, title, ylabel) in zip(axes, panels, strict=True):
         for color, m in zip(COLORS, ms, strict=True):
             xs, ys = _series(rows, metric=metric, group_key="M", group_value=m)
@@ -361,7 +384,8 @@ def _plot_primary_metrics(
         axis.set_xticks(sorted({int(row["K"]) for row in rows}))
         axis.grid(alpha=0.25)
     axes[0].set_ylim(0, 1)
-    axes[2].set_ylim(0, 1)
+    axes[1].set_ylim(0, 1)
+    axes[3].set_ylim(0, 1)
     axes[0].legend(frameon=False, ncol=2)
     fig.suptitle("Base Qwen3-4B: validity and diversity")
     fig.tight_layout()
@@ -376,6 +400,11 @@ def _plot_primary_metrics_by_separation(
     panels = (
         ("pass_at_k", "Pass@K", "Probability"),
         (
+            "predictive_diversity_recovery",
+            "Predictive diversity recovery",
+            "Oracle-normalized PDR@K",
+        ),
+        (
             "modes_recovered_given_success",
             "Modes recovered given success",
             "Distinct valid modes",
@@ -387,7 +416,7 @@ def _plot_primary_metrics_by_separation(
         ),
     )
     buckets = ("low", "medium", "high")
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.4), sharex=True)
+    fig, axes = plt.subplots(1, 4, figsize=(19, 4.4), sharex=True)
     for axis, (metric, title, ylabel) in zip(axes, panels, strict=True):
         for color, bucket in zip(COLORS, buckets):
             xs, ys = _series(
@@ -421,7 +450,8 @@ def _plot_primary_metrics_by_separation(
         axis.set_xticks(sorted({int(row["K"]) for row in rows}))
         axis.grid(alpha=0.25)
     axes[0].set_ylim(0, 1)
-    axes[2].set_ylim(0, 1)
+    axes[1].set_ylim(0, 1)
+    axes[3].set_ylim(0, 1)
     axes[0].legend(frameon=False)
     fig.suptitle("Base Qwen3-4B: validity and diversity by separation")
     fig.tight_layout()
@@ -460,7 +490,7 @@ def _plot_separation(
     panels = (
         ("exact_coverage", "Exact coverage"),
         ("effective_mode_count", "Effective mode count"),
-        ("generated_mode_separation", "Generated-mode separation"),
+        ("predictive_diversity_recovery", "Predictive diversity recovery"),
         ("duplicity", "Duplicity"),
     )
     buckets = ("low", "medium", "high")
@@ -603,8 +633,7 @@ def main() -> None:
         )
     summary = _summary(run)
     output_dir = Path(
-        args.output_dir
-        or f"artifacts/causal_micro_lab_final_eval/wandb_{run_id}"
+        args.output_dir or f"artifacts/causal_micro_lab_final_eval/wandb_{run_id}"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     ks = tuple(int(value) for value in args.ks.split(","))
@@ -633,9 +662,7 @@ def main() -> None:
         "display_name": run["displayName"],
         "state": run["state"],
         "updated_at": run["updatedAt"],
-        "wandb_url": (
-            f"https://wandb.ai/{args.entity}/{args.project}/runs/{run_id}"
-        ),
+        "wandb_url": (f"https://wandb.ai/{args.entity}/{args.project}/runs/{run_id}"),
     }
     _write_csv(output_dir / "run_metadata.csv", [metadata])
     _plot_by_m(tables["metrics_by_k_m"], ms, output_dir)
@@ -646,13 +673,18 @@ def main() -> None:
         output_dir,
         bootstrap_rows,
     )
-    _plot_primary_metrics_by_separation(
-        tables["primary_metrics_by_k_separation"],
-        output_dir,
-        bootstrap_rows,
-    )
+    separation_labels = {
+        str(row["separation_bucket"]) for row in tables["metrics_by_k_separation"]
+    }
+    if len(separation_labels) > 1:
+        _plot_primary_metrics_by_separation(
+            tables["primary_metrics_by_k_separation"],
+            output_dir,
+            bootstrap_rows,
+        )
     _plot_diversity(tables["metrics_by_k_m"], ms, output_dir)
-    _plot_separation(tables["metrics_by_k_separation"], output_dir)
+    if len(separation_labels) > 1:
+        _plot_separation(tables["metrics_by_k_separation"], output_dir)
     _plot_family(tables["metrics_by_k_family"], output_dir)
     _plot_generation(tables["generation_by_m"], output_dir)
     print(json.dumps(metadata, indent=2))

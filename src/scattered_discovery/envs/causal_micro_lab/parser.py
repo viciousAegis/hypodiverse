@@ -286,14 +286,34 @@ def parse_record_state(raw: dict[str, Any]):
                 ),
             )
         )
+    valid_mode_ids = tuple(str(item) for item in private.get("valid_mode_ids", ()))
+    observed_experiment_ids = tuple(item.experiment_id for item in evidence)
+    if metadata.get("separation_definition") == "predictive_target_disagreement_v2":
+        mean_separation = float(metadata.get("mean_separation", 0.0))
+        minimum_separation = float(metadata.get("minimum_separation", 0.0))
+        maximum_separation = float(metadata.get("maximum_separation", 0.0))
+        separation_bucket = str(metadata.get("separation_bucket", "unassigned"))
+    elif valid_mode_ids:
+        from scattered_discovery.envs.causal_micro_lab.state_generator import (
+            absolute_separation_bucket,
+            separation_for_modes,
+        )
+
+        mean_separation, minimum_separation, maximum_separation = separation_for_modes(
+            valid_mode_ids, observed_experiment_ids
+        )
+        separation_bucket = absolute_separation_bucket(mean_separation)
+    else:
+        mean_separation = minimum_separation = maximum_separation = 0.0
+        separation_bucket = "unassigned"
     return EvidenceState(
         state_id=str(raw["state_id"]),
         hidden_mode_id=str(private.get("hidden_mode_id", "")),
         evidence=tuple(evidence),
-        valid_mode_ids=tuple(str(item) for item in private.get("valid_mode_ids", ())),
-        mean_separation=float(metadata.get("mean_separation", 0.0)),
-        minimum_separation=float(metadata.get("minimum_separation", 0.0)),
-        maximum_separation=float(metadata.get("maximum_separation", 0.0)),
-        separation_bucket=str(metadata.get("separation_bucket", "unassigned")),
+        valid_mode_ids=valid_mode_ids,
+        mean_separation=mean_separation,
+        minimum_separation=minimum_separation,
+        maximum_separation=maximum_separation,
+        separation_bucket=separation_bucket,
         family_bucket=str(metadata.get("family_bucket", "unknown")),
     )
