@@ -83,6 +83,29 @@ as evidence that separation is irrelevant. PDR is normalized by the diversity
 available in each state, so a flat PDR curve means a method recovers a similar
 fraction of the opportunity as the opportunity changes.
 
+## Which modes are missed?
+
+Mode novelty is defined as a mode's mean Y-prediction disagreement with every
+other valid mode in the same evidence state. For each method and state, the
+analysis compares the mean novelty of generated modes with the mean novelty of
+missed modes. States without both groups are excluded, and confidence intervals
+bootstrap the paired state-level differences.
+
+At `K=16`:
+
+| Method | Paired states | Generated - missed novelty |
+|---|---:|---:|
+| Base | 173 | `+1.02` pp `[+0.47,+1.62]` |
+| Validity GRPO | 181 | `+1.30` pp `[+0.76,+1.82]` |
+| IPS-GRPO | 184 | `+1.11` pp `[+0.60,+1.64]` |
+| Latent-IPS v2 | 175 | `+0.39` pp `[-0.14,+0.92]` |
+
+The effect is small but suggests that Base, Validity GRPO, and IPS preferentially
+recover slightly more distinctive modes. Their missed modes tend to occupy
+denser, less predictively distinctive parts of the valid hypothesis space. This
+is a reachability association, not evidence that low novelty causally makes a
+mode difficult to generate.
+
 ## Reference-policy context
 
 The CPU reference policies are privileged diagnostic anchors because they
@@ -116,6 +139,7 @@ Tables are written to
 - `separation_association.csv`
 - `combined_rank_k4.csv`
 - `unique_valid_modes_by_k_m.csv`
+- `mode_novelty_by_discovery.csv`
 
 Figures are written to `docs/figures/causal_micro_lab_v2/`:
 
@@ -125,6 +149,7 @@ Figures are written to `docs/figures/causal_micro_lab_v2/`:
 - `validity_diversity_decomposition_k16.png`
 - `paired_pdr_vs_validity.png`
 - `unique_valid_modes_heatmap.png`
+- `generated_vs_missed_mode_novelty.png`
 
 `unique_valid_modes_heatmap.png` reports the mean number of distinct valid
 semantic modes generated for every `(K,M)` cell. All four panels use the same

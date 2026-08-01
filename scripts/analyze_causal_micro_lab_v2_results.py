@@ -15,6 +15,11 @@ import numpy as np
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from scattered_discovery.envs.causal_micro_lab.eval import load_states
+from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
+    PredictiveDistanceMatrix,
+)
+
 
 METHODS = ("base", "validity", "ips", "latent_ips")
 LABELS = {
@@ -258,7 +263,7 @@ def _decomposition_rows(
     for method in METHODS:
         items = list(by_method[method].values())
         successes = [r for r in items if r.values["pass_at_k"] > 0]
-        common = [by_method[method][state_id] for state_id in common_multimode]
+        common = [by_method[method][state_id] for state_id in sorted(common_multimode)]
         specs = (
             ("pass_at_k", items, "pass_at_k"),
             ("valid_mode_rate", items, "valid_mode_rate"),
@@ -427,6 +432,90 @@ def _unique_mode_rows(records: list[Record]) -> list[dict[str, Any]]:
                         ),
                     }
                 )
+    return output
+
+
+def _mode_novelty_rows(
+    reports_root: Path,
+    states_path: Path,
+    *,
+    samples: int,
+    rng: np.random.Generator,
+) -> list[dict[str, Any]]:
+    states = {state.state_id: state for state in load_states(states_path)}
+    novelty: dict[tuple[str, str], float] = {}
+    for state_id, state in states.items():
+        matrix = PredictiveDistanceMatrix(
+            state.valid_mode_ids,
+            state.observed_experiment_ids(),
+        )
+        for mode_id in state.valid_mode_ids:
+            distances = [
+                matrix.distance(mode_id, other_id)
+                for other_id in state.valid_mode_ids
+                if other_id != mode_id
+            ]
+            novelty[(state_id, mode_id)] = float(np.mean(distances))
+
+    output = []
+    for method in METHODS:
+        path = reports_root / method / "mode_reachability.csv"
+        with path.open(encoding="utf-8", newline="") as handle:
+            reachability = list(csv.DictReader(handle))
+        for k in KS:
+            by_state: dict[str, list[dict[str, str]]] = defaultdict(list)
+            for row in reachability:
+                if int(row["K"]) == k:
+                    by_state[str(row["state_id"])].append(row)
+            paired = []
+            for state_id, items in by_state.items():
+                generated = [
+                    novelty[(state_id, str(item["mode_id"]))]
+                    for item in items
+                    if int(item["discovered"]) > 0
+                ]
+                missed = [
+                    novelty[(state_id, str(item["mode_id"]))]
+                    for item in items
+                    if int(item["discovered"]) == 0
+                ]
+                if generated and missed:
+                    paired.append((float(np.mean(generated)), float(np.mean(missed))))
+            values = np.asarray(paired, dtype=float)
+            bootstrap_indices = rng.integers(
+                0, len(values), size=(samples, len(values))
+            )
+            generated_estimates = values[bootstrap_indices, 0].mean(axis=1)
+            missed_estimates = values[bootstrap_indices, 1].mean(axis=1)
+            difference_estimates = (
+                values[bootstrap_indices, 0] - values[bootstrap_indices, 1]
+            ).mean(axis=1)
+
+            def interval(estimates: np.ndarray) -> tuple[float, float]:
+                low, high = np.quantile(estimates, (0.025, 0.975))
+                return float(low), float(high)
+
+            generated_low, generated_high = interval(generated_estimates)
+            missed_low, missed_high = interval(missed_estimates)
+            difference_low, difference_high = interval(difference_estimates)
+            output.append(
+                {
+                    "method": method,
+                    "K": k,
+                    "paired_states": len(values),
+                    "generated_mode_novelty": float(values[:, 0].mean()),
+                    "generated_mode_novelty_ci95_low": generated_low,
+                    "generated_mode_novelty_ci95_high": generated_high,
+                    "missed_mode_novelty": float(values[:, 1].mean()),
+                    "missed_mode_novelty_ci95_low": missed_low,
+                    "missed_mode_novelty_ci95_high": missed_high,
+                    "generated_minus_missed_novelty": float(
+                        (values[:, 0] - values[:, 1]).mean()
+                    ),
+                    "generated_minus_missed_novelty_ci95_low": difference_low,
+                    "generated_minus_missed_novelty_ci95_high": difference_high,
+                }
+            )
     return output
 
 
@@ -777,6 +866,112 @@ def _plot_unique_mode_heatmaps(rows: list[dict[str, Any]], output: Path) -> None
     plt.close(fig)
 
 
+def _plot_mode_novelty(rows: list[dict[str, Any]], output: Path) -> None:
+    items = [row for row in rows if int(row["K"]) == 16]
+    items.sort(key=lambda row: METHODS.index(str(row["method"])))
+    x = np.arange(len(items), dtype=float)
+    generated = np.asarray([float(row["generated_mode_novelty"]) for row in items])
+    missed = np.asarray([float(row["missed_mode_novelty"]) for row in items])
+    differences = np.asarray(
+        [float(row["generated_minus_missed_novelty"]) for row in items]
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(11.2, 4.4))
+    offset = 0.10
+    axes[0].errorbar(
+        x - offset,
+        generated,
+        yerr=[
+            generated
+            - np.asarray(
+                [float(row["generated_mode_novelty_ci95_low"]) for row in items]
+            ),
+            np.asarray(
+                [float(row["generated_mode_novelty_ci95_high"]) for row in items]
+            )
+            - generated,
+        ],
+        fmt="o",
+        color="#0F766E",
+        capsize=4,
+        markersize=7,
+        label="Generated modes",
+    )
+    axes[0].errorbar(
+        x + offset,
+        missed,
+        yerr=[
+            missed
+            - np.asarray([float(row["missed_mode_novelty_ci95_low"]) for row in items]),
+            np.asarray([float(row["missed_mode_novelty_ci95_high"]) for row in items])
+            - missed,
+        ],
+        fmt="o",
+        color="#94A3B8",
+        capsize=4,
+        markersize=7,
+        label="Missed modes",
+    )
+    axes[0].set_ylim(0, 0.31)
+    axes[0].set_ylabel("Mean mode novelty")
+    axes[0].set_title("Absolute predictive distinctiveness", loc="left")
+    axes[0].legend(frameon=False)
+
+    difference_lows = np.asarray(
+        [float(row["generated_minus_missed_novelty_ci95_low"]) for row in items]
+    )
+    difference_highs = np.asarray(
+        [float(row["generated_minus_missed_novelty_ci95_high"]) for row in items]
+    )
+    axes[1].axhline(0, color="#111827", linestyle="--", linewidth=1)
+    for index, row in enumerate(items):
+        color = COLORS[str(row["method"])]
+        axes[1].errorbar(
+            x[index],
+            100 * differences[index],
+            yerr=np.asarray(
+                [
+                    [100 * (differences[index] - difference_lows[index])],
+                    [100 * (difference_highs[index] - differences[index])],
+                ]
+            ),
+            fmt="o",
+            color=color,
+            ecolor=color,
+            capsize=5,
+            linewidth=2,
+            markersize=7,
+        )
+    axes[1].set_ylabel("Generated - missed novelty\n(percentage points)")
+    axes[1].set_title("Within-state paired difference", loc="left")
+
+    labels = [
+        f"{LABELS[str(row['method'])]}\n(n={int(row['paired_states'])})"
+        for row in items
+    ]
+    for axis in axes:
+        axis.set_xticks(x, labels)
+        axis.tick_params(axis="x", labelrotation=20)
+        for label in axis.get_xticklabels():
+            label.set_ha("right")
+        _style_axis(axis)
+    fig.suptitle(
+        "Generated modes are slightly more distinctive than missed modes (K=16)",
+        fontsize=15,
+    )
+    fig.text(
+        0.06,
+        0.01,
+        "Mode novelty is its mean Y-prediction disagreement with the other valid modes in the same state; intervals bootstrap states.",
+        fontsize=9.2,
+        color="#475569",
+    )
+    fig.tight_layout(rect=(0, 0.06, 1, 0.92), w_pad=2.4)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -790,6 +985,11 @@ def main() -> None:
         default=Path(
             "artifacts/causal_micro_lab_diversity_rankability/final_v2/summary.json"
         ),
+    )
+    parser.add_argument(
+        "--states",
+        type=Path,
+        default=Path("eval_sets/causal_micro_lab/final_v2/verl_test.jsonl"),
     )
     parser.add_argument(
         "--output-dir",
@@ -814,6 +1014,12 @@ def main() -> None:
     )
     ranking = _combined_ranking(summary, args.reference_summary)
     unique_modes = _unique_mode_rows(records)
+    mode_novelty = _mode_novelty_rows(
+        args.reports_root,
+        args.states,
+        samples=args.bootstrap_samples,
+        rng=np.random.default_rng(20260802),
+    )
 
     _write_csv(args.output_dir / "headline_by_k.csv", summary)
     _write_csv(args.output_dir / "paired_differences.csv", paired)
@@ -821,6 +1027,7 @@ def main() -> None:
     _write_csv(args.output_dir / "separation_association.csv", separation_association)
     _write_csv(args.output_dir / "combined_rank_k4.csv", ranking)
     _write_csv(args.output_dir / "unique_valid_modes_by_k_m.csv", unique_modes)
+    _write_csv(args.output_dir / "mode_novelty_by_discovery.csv", mode_novelty)
     _plot_separation(
         records,
         k=4,
@@ -843,6 +1050,10 @@ def main() -> None:
     _plot_unique_mode_heatmaps(
         unique_modes,
         args.figure_dir / "unique_valid_modes_heatmap.png",
+    )
+    _plot_mode_novelty(
+        mode_novelty,
+        args.figure_dir / "generated_vs_missed_mode_novelty.png",
     )
 
     print(f"validated_methods={len(METHODS)} states=192 rows={len(records)}")
