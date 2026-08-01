@@ -1,0 +1,118 @@
+{
+  "counts_by_family": {
+    "cross_family": 56,
+    "mixed": 66,
+    "within_family": 70
+  },
+  "evidence_size": {
+    "maximum": 4,
+    "mean": 3.4322916666666665,
+    "minimum": 3
+  },
+  "excluded_states": 1197,
+  "exclusion_paths": [
+    "data/causal_micro_lab/pilot_sft/states_test.jsonl",
+    "data/causal_micro_lab/pilot_sft/states_train.jsonl",
+    "data/causal_micro_lab/pilot_sft/states_val.jsonl",
+    "data/causal_micro_lab/sft_debug/states_test.jsonl",
+    "data/causal_micro_lab/sft_debug/states_train.jsonl",
+    "data/causal_micro_lab/sft_debug/states_val.jsonl",
+    "eval_sets/causal_micro_lab/final_v1/states.jsonl",
+    "eval_sets/causal_micro_lab/final_v2/states.jsonl",
+    "eval_sets/causal_micro_lab/closed_loop_v1/states.jsonl"
+  ],
+  "files": {
+    "states.jsonl": "21360ecc53b19e75b92e00e8586795205d0b11a14044392cbab7067a063080e3",
+    "verl_test.jsonl": "4e6ee134a105276b91ebdedab55afe3f5af53689f7c3f666b037cfa0aae36967"
+  },
+  "geometry_by_M": {
+    "12": {
+      "count": 48,
+      "opportunity_maximum": 0.3378378378378379,
+      "opportunity_mean": 0.20216961753420087,
+      "opportunity_median": 0.20601851851851855,
+      "opportunity_minimum": 0.06944444444444443,
+      "opportunity_p05": 0.07870370370370372,
+      "opportunity_p95": 0.3288288288288288,
+      "separation_maximum": 0.5339885339885337,
+      "separation_mean": 0.3783120241453574,
+      "separation_median": 0.4166666666666666,
+      "separation_minimum": 0.18602693602693593
+    },
+    "16": {
+      "count": 48,
+      "opportunity_maximum": 0.3513513513513514,
+      "opportunity_mean": 0.22813145176426428,
+      "opportunity_median": 0.2297297297297298,
+      "opportunity_minimum": 0.10472972972972978,
+      "opportunity_p05": 0.11805555555555558,
+      "opportunity_p95": 0.3243243243243244,
+      "separation_maximum": 0.5905405405405407,
+      "separation_mean": 0.43292263617784443,
+      "separation_median": 0.455855855855856,
+      "separation_minimum": 0.22962962962962952
+    },
+    "4": {
+      "count": 48,
+      "opportunity_maximum": 0.40277777777777773,
+      "opportunity_mean": 0.23376110485485485,
+      "opportunity_median": 0.23611111111111113,
+      "opportunity_minimum": 0.06944444444444445,
+      "opportunity_p05": 0.08333333333333333,
+      "opportunity_p95": 0.3819444444444444,
+      "separation_maximum": 0.5370370370370371,
+      "separation_mean": 0.333275984317651,
+      "separation_median": 0.36111111111111116,
+      "separation_minimum": 0.12037037037037036
+    },
+    "8": {
+      "count": 48,
+      "opportunity_maximum": 0.3412162162162163,
+      "opportunity_mean": 0.21113691816816818,
+      "opportunity_median": 0.21180555555555555,
+      "opportunity_minimum": 0.0798611111111111,
+      "opportunity_p05": 0.10763888888888891,
+      "opportunity_p95": 0.3310810810810811,
+      "separation_maximum": 0.5521235521235522,
+      "separation_mean": 0.3586102843915344,
+      "separation_median": 0.3861003861003861,
+      "separation_minimum": 0.18532818532818535
+    }
+  },
+  "name": "causal_micro_lab_final_eval_v3",
+  "one_state_per_hidden_mode": true,
+  "overlap_audit": {
+    "duplicate_hidden_modes": 0,
+    "duplicate_state_ids": 0,
+    "duplicate_visible_prompts": 0,
+    "hidden_mode_overlap_with_train": 0,
+    "hidden_mode_overlap_with_val": 0,
+    "hidden_modes_outside_test_split": 0,
+    "state_id_overlap_with_exclusions": 0,
+    "states": 192,
+    "visible_prompt_overlap_with_exclusions": 0
+  },
+  "prediction_outcome": [
+    "Z1",
+    "Z2",
+    "Y"
+  ],
+  "representative_budget": 4,
+  "representative_coverage_definition": "full_outcome_facility_location_v3",
+  "schema_version": 3,
+  "selection_method": "evenly_spaced_representative_coverage_opportunity",
+  "selection_seed": 20260801,
+  "separation_definition": "full_outcome_disagreement_v3",
+  "source_mode_split": "test",
+  "split_seed": 1,
+  "state_bank": "artifacts/causal_micro_lab_environment_characterization/predictive_v2/states.jsonl",
+  "state_id_order_sha256": "b916e6ab5311b9caacda36a8db4777161dd09526ac1cb9a1a3a6eedf25aa0f34",
+  "states_per_M": 48,
+  "target_counts": [
+    4,
+    8,
+    12,
+    16
+  ],
+  "total_states": 192
+}

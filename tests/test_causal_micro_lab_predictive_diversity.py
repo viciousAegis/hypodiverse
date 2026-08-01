@@ -12,8 +12,14 @@ from scattered_discovery.envs.causal_micro_lab.benchmark_v2 import (
     select_continuous_states,
     separation_distribution_by_m,
 )
+from scattered_discovery.envs.causal_micro_lab.benchmark_v3 import (
+    FULL_OUTCOME_SEPARATION_DEFINITION,
+    annotate_representative_geometry,
+)
 from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
     PredictiveDistanceMatrix,
+    RepresentativeCoverageMatrix,
+    mode_full_outcome_distance,
     mode_prediction_distance,
     prediction_target_indices,
     theoretical_binary_pairwise_max,
@@ -124,6 +130,70 @@ class PredictiveDiversityTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(tuple(sorted(first[1])), first[1])
         self.assertTrue(math.isfinite(first[0]))
+
+    def test_full_outcome_distance_uses_complete_experimental_result(self):
+        matrix = RepresentativeCoverageMatrix(
+            self.state.valid_mode_ids,
+            self.state.observed_experiment_ids(),
+            mode_table=self.table,
+        )
+        left, right = self.state.valid_mode_ids[:2]
+        manual = sum(
+            self.table.modes_by_id[left].signature[query_id]
+            != self.table.modes_by_id[right].signature[query_id]
+            for query_id in matrix.query_ids
+        ) / len(matrix.query_ids)
+        self.assertAlmostEqual(matrix.distance(left, right), manual)
+        self.assertAlmostEqual(
+            mode_full_outcome_distance(
+                left,
+                right,
+                matrix.query_ids,
+                mode_table=self.table,
+            ),
+            manual,
+        )
+
+    def test_representative_coverage_oracle_and_curve(self):
+        matrix = RepresentativeCoverageMatrix(
+            self.state.valid_mode_ids,
+            self.state.observed_experiment_ids(),
+            mode_table=self.table,
+        )
+        oracle_error, oracle_modes = matrix.optimal_subset(4)
+        result = matrix.representative_coverage(oracle_modes)
+        self.assertAlmostEqual(result.representation_error, oracle_error)
+        self.assertAlmostEqual(result.placement_regret, 0.0)
+        self.assertAlmostEqual(result.coverage_auc, 1.0 - oracle_error)
+        curve = matrix.coverage_curve(oracle_modes, (0.0, 0.5, 1.0))
+        self.assertAlmostEqual(curve[0], 4 / self.state.valid_mode_count)
+        self.assertLessEqual(curve[0], curve[1])
+        self.assertEqual(curve[2], 1.0)
+
+        clustered = (oracle_modes[0],) * 4
+        clustered_result = matrix.representative_coverage(clustered)
+        self.assertEqual(clustered_result.valid_unique_modes, 1)
+        self.assertGreaterEqual(clustered_result.placement_regret, 0.0)
+        self.assertLessEqual(clustered_result.coverage_auc, 1.0)
+
+    def test_v3_geometry_metadata_round_trips(self):
+        annotated = annotate_representative_geometry(
+            self.state,
+            representative_budget=4,
+            mode_table=self.table,
+        )
+        record = annotated.to_record(mode_table=self.table, include_private=True)
+        parsed = parse_record_state(record)
+        self.assertEqual(
+            parsed.separation_definition,
+            FULL_OUTCOME_SEPARATION_DEFINITION,
+        )
+        self.assertEqual(parsed.separation_targets, ("Z1", "Z2", "Y"))
+        self.assertEqual(parsed.representative_budget, 4)
+        self.assertAlmostEqual(
+            parsed.representative_coverage_opportunity,
+            annotated.representative_coverage_opportunity,
+        )
 
     def test_absolute_separation_bands_do_not_relabel_by_quantile(self):
         states = [

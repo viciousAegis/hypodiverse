@@ -282,6 +282,24 @@ dominant-mode mass, effective mode count, mechanism-family coverage, generated
 consequence separation, oracle-normalized predictive diversity recovery
 (`PDR@K`), cap-hit rate, and fallback success.
 
+## Geometry-aware representative-coverage eval v3
+
+The frozen v3 evaluation replaces the narrow target-Y separation summary with
+full-outcome distance and representative coverage of the valid hypothesis
+space. It keeps validity, mode count, and same-cardinality placement quality as
+separate reported quantities. Cluster construction, checkpoint pins, launch
+commands, W&B names, and comparison commands are documented in:
+
+```text
+docs/causal_micro_lab_v3_cluster_eval.md
+```
+
+Submit the four independent base/Validity/IPS/Latent evaluations with:
+
+```bash
+bash scripts/cluster/submit_causal_micro_lab_v3_evals.sh
+```
+
 ## CD-GRPO on the Slurm cluster
 
 CD-GRPO uses a dedicated agent loop and a project-owned veRL v1 TaskRunner.

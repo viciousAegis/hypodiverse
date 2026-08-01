@@ -122,6 +122,9 @@ def _log_wandb_set_plots(
         "family_coverage",
         "generated_mode_separation",
         "predictive_diversity_recovery",
+        "predictive_coverage_auc",
+        "predictive_placement_regret",
+        "full_outcome_generated_separation",
     )
     table_columns = ["K", "M", *metrics]
     table_data = []
@@ -182,6 +185,8 @@ def _log_wandb_set_plots(
             "effective_mode_count",
             "generated_mode_separation",
             "predictive_diversity_recovery",
+            "predictive_coverage_auc",
+            "predictive_placement_regret",
         ):
             wandb_run.log(
                 {
@@ -265,6 +270,18 @@ def _log_wandb_bootstrap_report(
             columns=columns,
             data=rows,
         )
+    for filename in (
+        "predictive_coverage_curves_by_k_m.csv",
+        "predictive_coverage_curves_by_state.csv",
+    ):
+        path = report_dir / filename
+        if not path.exists():
+            continue
+        columns, rows = _read_csv_table(path)
+        tables[f"eval_tables/{path.stem}"] = wandb.Table(
+            columns=columns,
+            data=rows,
+        )
     wandb_run.log(tables)
 
     primary_metrics = {
@@ -272,6 +289,8 @@ def _log_wandb_bootstrap_report(
         "predictive_diversity_recovery_given_success",
         "modes_recovered_given_success",
         "fraction_modes_recovered_given_success",
+        "predictive_coverage_auc_given_success",
+        "predictive_placement_regret_given_success",
     }
     scalar_metrics: dict[str, float | int] = {}
     bootstrap_path = report_dir / "bootstrap_ci95.csv"

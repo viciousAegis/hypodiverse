@@ -140,7 +140,8 @@ else
   echo "Reusing merged model: $MODEL_PATH"
 fi
 
-RUN_NAME="${RUN_NAME:-${TRAINING_RUN}_global_step_${STEP}_final_k16}"
+EVAL_LABEL="${EVAL_LABEL:-final_k16}"
+RUN_NAME="${RUN_NAME:-${TRAINING_RUN}_global_step_${STEP}_${EVAL_LABEL}}"
 if [[ "$EVAL_MODE" == "latent" ]]; then
   EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_final_k16_latent.yaml}"
   LATENT_COUNT=8

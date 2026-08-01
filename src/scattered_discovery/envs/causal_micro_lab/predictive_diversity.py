@@ -13,6 +13,7 @@ from scattered_discovery.envs.causal_micro_lab.signatures import (
 
 OUTCOME_CHANNELS = ("Z1", "Z2", "Y")
 DEFAULT_PREDICTION_TARGET = (2,)
+FULL_OUTCOME_CARDINALITY = 2 ** len(OUTCOME_CHANNELS)
 
 
 def prediction_target_indices(channels: Iterable[str]) -> tuple[int, ...]:
@@ -73,6 +74,26 @@ def mode_prediction_distance(
     return disagreements / (len(queries) * len(target_indices))
 
 
+def mode_full_outcome_distance(
+    left_mode_id: str,
+    right_mode_id: str,
+    query_ids: Iterable[int],
+    *,
+    mode_table: ModeTable | None = None,
+) -> float:
+    """Probability that two modes predict distinguishable full outcomes."""
+    table = mode_table or build_mode_table()
+    queries = tuple(int(query_id) for query_id in query_ids)
+    if not queries:
+        return 0.0
+    left = table.modes_by_id[left_mode_id]
+    right = table.modes_by_id[right_mode_id]
+    disagreements = sum(
+        left.signature[query_id] != right.signature[query_id] for query_id in queries
+    )
+    return disagreements / len(queries)
+
+
 def theoretical_binary_pairwise_max(mode_count: int) -> float:
     """Maximum mean pairwise disagreement at one binary prediction query."""
     if mode_count < 2:
@@ -80,6 +101,21 @@ def theoretical_binary_pairwise_max(mode_count: int) -> float:
     disagreeing_pairs = (mode_count * mode_count) // 4
     total_pairs = math.comb(mode_count, 2)
     return disagreeing_pairs / total_pairs
+
+
+def theoretical_categorical_pairwise_max(
+    mode_count: int,
+    category_count: int,
+) -> float:
+    """Maximum mean pairwise disagreement for one categorical prediction."""
+    if mode_count < 2 or category_count < 1:
+        return 0.0
+    used_categories = min(mode_count, category_count)
+    base, remainder = divmod(mode_count, used_categories)
+    agreeing_pairs = remainder * math.comb(base + 1, 2) + (
+        used_categories - remainder
+    ) * math.comb(base, 2)
+    return 1.0 - agreeing_pairs / math.comb(mode_count, 2)
 
 
 @dataclass(frozen=True)
@@ -97,6 +133,16 @@ class PredictiveDiversityResult:
     oracle_mass: float
     valid_unique_modes: int
     target_size: int
+    oracle_mode_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RepresentativeCoverageResult:
+    coverage_auc: float
+    representation_error: float
+    oracle_error_same_size: float
+    placement_regret: float
+    valid_unique_modes: int
     oracle_mode_ids: tuple[str, ...]
 
 
@@ -210,6 +256,150 @@ class PredictiveDistanceMatrix:
             oracle_mass=oracle_mass,
             valid_unique_modes=len(valid_unique),
             target_size=target_size,
+            oracle_mode_ids=oracle_ids,
+        )
+
+
+class RepresentativeCoverageMatrix:
+    """Full-outcome geometry and facility-location coverage for a version space."""
+
+    def __init__(
+        self,
+        mode_ids: Iterable[str],
+        observed_experiment_ids: Iterable[int],
+        *,
+        mode_table: ModeTable | None = None,
+    ) -> None:
+        self.table = mode_table or build_mode_table()
+        self.mode_ids = tuple(dict.fromkeys(str(mode_id) for mode_id in mode_ids))
+        self.mode_set = frozenset(self.mode_ids)
+        self.query_ids = available_query_ids(
+            observed_experiment_ids,
+            mode_table=self.table,
+        )
+        self._distances: dict[tuple[str, str], float] = {}
+        self._optimal_cache: dict[int, tuple[float, tuple[str, ...]]] = {}
+        for left, right in combinations(self.mode_ids, 2):
+            self._distances[self._key(left, right)] = mode_full_outcome_distance(
+                left,
+                right,
+                self.query_ids,
+                mode_table=self.table,
+            )
+
+    @staticmethod
+    def _key(left: str, right: str) -> tuple[str, str]:
+        return (left, right) if left < right else (right, left)
+
+    def distance(self, left: str, right: str) -> float:
+        if left == right:
+            return 0.0
+        return self._distances[self._key(left, right)]
+
+    def separation_summary(self) -> SeparationSummary:
+        distances = list(self._distances.values())
+        if not distances:
+            return SeparationSummary(0.0, 0.0, 0.0, 0.0)
+        mean = sum(distances) / len(distances)
+        theoretical_max = theoretical_categorical_pairwise_max(
+            len(self.mode_ids),
+            FULL_OUTCOME_CARDINALITY,
+        )
+        return SeparationSummary(
+            mean=mean,
+            minimum=min(distances),
+            maximum=max(distances),
+            normalized_mean=mean / theoretical_max if theoretical_max else 0.0,
+        )
+
+    def representation_error(self, mode_ids: Iterable[str]) -> float:
+        representatives = tuple(
+            dict.fromkeys(
+                str(mode_id) for mode_id in mode_ids if str(mode_id) in self.mode_set
+            )
+        )
+        if not self.mode_ids or not representatives:
+            return 1.0
+        return sum(
+            min(
+                self.distance(mode_id, representative)
+                for representative in representatives
+            )
+            for mode_id in self.mode_ids
+        ) / len(self.mode_ids)
+
+    def coverage_curve(
+        self,
+        mode_ids: Iterable[str],
+        radii: Iterable[float],
+    ) -> tuple[float, ...]:
+        representatives = tuple(
+            dict.fromkeys(
+                str(mode_id) for mode_id in mode_ids if str(mode_id) in self.mode_set
+            )
+        )
+        thresholds = tuple(float(radius) for radius in radii)
+        if any(radius < 0.0 or radius > 1.0 for radius in thresholds):
+            raise ValueError("coverage radii must be in [0, 1]")
+        if not self.mode_ids or not representatives:
+            return tuple(0.0 for _ in thresholds)
+        nearest = [
+            min(
+                self.distance(mode_id, representative)
+                for representative in representatives
+            )
+            for mode_id in self.mode_ids
+        ]
+        return tuple(
+            sum(distance <= radius + 1e-15 for distance in nearest) / len(nearest)
+            for radius in thresholds
+        )
+
+    def optimal_subset(self, budget: int) -> tuple[float, tuple[str, ...]]:
+        target_size = min(max(0, int(budget)), len(self.mode_ids))
+        cached = self._optimal_cache.get(target_size)
+        if cached is not None:
+            return cached
+        if target_size == 0:
+            return (1.0, ())
+        if target_size == len(self.mode_ids):
+            result = (0.0, tuple(sorted(self.mode_ids)))
+            self._optimal_cache[target_size] = result
+            return result
+
+        best_error = math.inf
+        best_subset: tuple[str, ...] = ()
+        for subset in combinations(sorted(self.mode_ids), target_size):
+            error = self.representation_error(subset)
+            if error < best_error - 1e-15 or (
+                math.isclose(error, best_error, abs_tol=1e-15)
+                and (not best_subset or subset < best_subset)
+            ):
+                best_error = error
+                best_subset = subset
+        result = (best_error, best_subset)
+        self._optimal_cache[target_size] = result
+        return result
+
+    def representative_coverage(
+        self,
+        generated_mode_ids: Iterable[str | None],
+    ) -> RepresentativeCoverageResult:
+        valid_unique = tuple(
+            dict.fromkeys(
+                mode_id
+                for mode_id in generated_mode_ids
+                if mode_id is not None and mode_id in self.mode_set
+            )
+        )
+        error = self.representation_error(valid_unique)
+        oracle_error, oracle_ids = self.optimal_subset(len(valid_unique))
+        return RepresentativeCoverageResult(
+            coverage_auc=1.0 - error,
+            representation_error=error,
+            oracle_error_same_size=oracle_error,
+            placement_regret=max(0.0, error - oracle_error),
+            valid_unique_modes=len(valid_unique),
             oracle_mode_ids=oracle_ids,
         )
 

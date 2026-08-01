@@ -15,6 +15,9 @@ from scattered_discovery.envs.causal_micro_lab.eval import (
     load_states,
     summarize_grouped_records,
 )
+from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
+    RepresentativeCoverageMatrix,
+)
 from scattered_discovery.envs.causal_micro_lab.rewards import group_metrics
 from scattered_discovery.envs.causal_micro_lab.signatures import build_mode_table
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
@@ -45,13 +48,26 @@ CONDITIONAL_METRICS = (
         "predictive_diversity_recovery_given_success",
         "predictive_diversity_recovery",
     ),
+    ("predictive_coverage_auc_given_success", "predictive_coverage_auc"),
+    (
+        "predictive_placement_regret_given_success",
+        "predictive_placement_regret",
+    ),
+    (
+        "full_outcome_generated_separation_given_success",
+        "full_outcome_generated_separation",
+    ),
 )
 PRIMARY_METRICS = (
     "pass_at_k",
     "predictive_diversity_recovery_given_success",
     "modes_recovered_given_success",
     "fraction_modes_recovered_given_success",
+    "predictive_coverage_auc_given_success",
+    "predictive_placement_regret_given_success",
 )
+
+COVERAGE_CURVE_RADII = tuple(index / 20 for index in range(21))
 
 
 def _mean(items: list[float]) -> float:
@@ -83,6 +99,11 @@ def _state_metric_rows(
     metric_rows: list[dict[str, Any]] = []
     reachability_rows: list[dict[str, Any]] = []
     for state in states:
+        representative_matrix = RepresentativeCoverageMatrix(
+            state.valid_mode_ids,
+            state.observed_experiment_ids(),
+            mode_table=table,
+        )
         state_records = sorted(
             by_state[state.state_id],
             key=lambda record: int(record["rollout_index"]),
@@ -97,7 +118,11 @@ def _state_metric_rows(
                 for record in prefix
                 for result in _verification_results_for_record(record)
             ]
-            metrics = group_metrics(results, state)
+            metrics = group_metrics(
+                results,
+                state,
+                representative_matrix=representative_matrix,
+            )
             valid_count = int(
                 metrics["num_unique_valid_modes"] + metrics["duplicate_valid_modes"]
             )
@@ -112,6 +137,10 @@ def _state_metric_rows(
                 "mean_separation": state.mean_separation,
                 "minimum_separation": state.minimum_separation,
                 "maximum_separation": state.maximum_separation,
+                "separation_definition": state.separation_definition,
+                "representative_coverage_opportunity": (
+                    state.representative_coverage_opportunity
+                ),
                 **metrics,
             }
             metric_rows.append(row)
@@ -186,6 +215,12 @@ def _aggregate_primary_rows(
                 ),
                 "fraction_modes_recovered_given_success": _mean(
                     [float(item["exact_coverage"]) for item in successes]
+                ),
+                "predictive_coverage_auc_given_success": _mean(
+                    [float(item["predictive_coverage_auc"]) for item in successes]
+                ),
+                "predictive_placement_regret_given_success": _mean(
+                    [float(item["predictive_placement_regret"]) for item in successes]
                 ),
             }
         )
@@ -317,6 +352,64 @@ def _mode_family_rows(reachability: list[dict[str, Any]]) -> list[dict[str, Any]
     return output
 
 
+def _coverage_curve_rows(
+    reachability: list[dict[str, Any]],
+    states: list[EvidenceState],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    states_by_id = {state.state_id: state for state in states}
+    grouped: dict[tuple[str, int], list[dict[str, Any]]] = defaultdict(list)
+    for row in reachability:
+        grouped[(str(row["state_id"]), int(row["K"]))].append(row)
+
+    state_rows = []
+    for (state_id, k), items in sorted(grouped.items()):
+        state = states_by_id[state_id]
+        generated = tuple(
+            str(item["mode_id"]) for item in items if int(item["generated_count"]) > 0
+        )
+        matrix = RepresentativeCoverageMatrix(
+            state.valid_mode_ids,
+            state.observed_experiment_ids(),
+        )
+        coverage = matrix.coverage_curve(generated, COVERAGE_CURVE_RADII)
+        for radius, value in zip(COVERAGE_CURVE_RADII, coverage, strict=True):
+            state_rows.append(
+                {
+                    "state_id": state_id,
+                    "K": k,
+                    "M": state.valid_mode_count,
+                    "radius": radius,
+                    "predictive_coverage": value,
+                    "pass_at_k": float(bool(generated)),
+                    "representative_coverage_opportunity": (
+                        state.representative_coverage_opportunity
+                    ),
+                }
+            )
+
+    aggregated = []
+    grouped_curves: dict[tuple[int, int, float], list[dict[str, Any]]] = defaultdict(
+        list
+    )
+    for row in state_rows:
+        grouped_curves[(int(row["K"]), int(row["M"]), float(row["radius"]))].append(row)
+    for (k, mode_count, radius), items in sorted(grouped_curves.items()):
+        successes = [item for item in items if float(item["pass_at_k"]) > 0]
+        aggregated.append(
+            {
+                "K": k,
+                "M": mode_count,
+                "radius": radius,
+                "support_states": len(items),
+                "successful_states": len(successes),
+                "predictive_coverage_given_success": _mean(
+                    [float(item["predictive_coverage"]) for item in successes]
+                ),
+            }
+        )
+    return state_rows, aggregated
+
+
 def _sample_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     initial_tokens = [
         int(record["initial_completion_tokens"])
@@ -398,6 +491,10 @@ def build_report(
         samples=bootstrap_samples,
     )
     mode_family_rows = _mode_family_rows(reachability_rows)
+    coverage_curve_rows, coverage_curve_summary = _coverage_curve_rows(
+        reachability_rows,
+        states,
+    )
     sample_summary = _sample_summary(records)
     set_summaries = {
         str(set_answer_count if set_answer_count is not None else k): (
@@ -416,6 +513,8 @@ def build_report(
         "episodes": len(records),
         "Ks": [set_answer_count if set_answer_count is not None else k for k in ks],
         "Ms": sorted({state.valid_mode_count for state in states}),
+        "predictive_coverage_definition": "full_outcome_facility_location_v3",
+        "coverage_curve_radii": list(COVERAGE_CURVE_RADII),
         "sample_summary": sample_summary,
         "set_summaries": set_summaries,
     }
@@ -461,6 +560,12 @@ def build_report(
     )
     _write_csv(output_dir / "mode_reachability.csv", reachability_rows)
     _write_csv(output_dir / "mode_discovery_by_family.csv", mode_family_rows)
+    _write_csv(
+        output_dir / "predictive_coverage_curves_by_state.csv", coverage_curve_rows
+    )
+    _write_csv(
+        output_dir / "predictive_coverage_curves_by_k_m.csv", coverage_curve_summary
+    )
     _write_csv(
         output_dir / "sample_summary.csv",
         [{"metric": key, "value": value} for key, value in sample_summary.items()],

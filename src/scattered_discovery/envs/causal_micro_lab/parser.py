@@ -288,7 +288,14 @@ def parse_record_state(raw: dict[str, Any]):
         )
     valid_mode_ids = tuple(str(item) for item in private.get("valid_mode_ids", ()))
     observed_experiment_ids = tuple(item.experiment_id for item in evidence)
-    if metadata.get("separation_definition") == "predictive_target_disagreement_v2":
+    raw_separation_definition = metadata.get("separation_definition")
+    separation_definition = str(
+        raw_separation_definition or "predictive_target_disagreement_v2"
+    )
+    if raw_separation_definition in {
+        "predictive_target_disagreement_v2",
+        "full_outcome_disagreement_v3",
+    }:
         mean_separation = float(metadata.get("mean_separation", 0.0))
         minimum_separation = float(metadata.get("minimum_separation", 0.0))
         maximum_separation = float(metadata.get("maximum_separation", 0.0))
@@ -316,4 +323,28 @@ def parse_record_state(raw: dict[str, Any]):
         maximum_separation=maximum_separation,
         separation_bucket=separation_bucket,
         family_bucket=str(metadata.get("family_bucket", "unknown")),
+        separation_definition=separation_definition,
+        separation_targets=tuple(
+            str(item) for item in metadata.get("separation_targets", ("Y",))
+        ),
+        representative_budget=(
+            int(metadata["representative_budget"])
+            if metadata.get("representative_budget") is not None
+            else None
+        ),
+        oracle_singleton_representation_error=(
+            float(metadata["oracle_singleton_representation_error"])
+            if metadata.get("oracle_singleton_representation_error") is not None
+            else None
+        ),
+        oracle_budget_representation_error=(
+            float(metadata["oracle_budget_representation_error"])
+            if metadata.get("oracle_budget_representation_error") is not None
+            else None
+        ),
+        representative_coverage_opportunity=(
+            float(metadata["representative_coverage_opportunity"])
+            if metadata.get("representative_coverage_opportunity") is not None
+            else None
+        ),
     )

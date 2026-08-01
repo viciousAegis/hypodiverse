@@ -45,6 +45,9 @@ def _metric_row(
         "generated_mode_separation": 0.0,
         "generated_to_available_separation": 0.0,
         "predictive_diversity_recovery": exact_coverage,
+        "predictive_coverage_auc": exact_coverage,
+        "predictive_placement_regret": 1.0 - exact_coverage,
+        "full_outcome_generated_separation": exact_coverage,
     }
 
 
@@ -77,6 +80,8 @@ class CausalMicroLabReportTests(unittest.TestCase):
             result["predictive_diversity_recovery_given_success"],
             0.375,
         )
+        self.assertEqual(result["predictive_coverage_auc_given_success"], 0.375)
+        self.assertEqual(result["predictive_placement_regret_given_success"], 0.625)
         self.assertEqual(result["modes_recovered_given_success"], 1.5)
         self.assertEqual(
             result["fraction_modes_recovered_given_success"],
@@ -125,9 +130,9 @@ class CausalMicroLabReportTests(unittest.TestCase):
         self.assertLessEqual(coverage_row["ci95_low"], 0.375)
         self.assertGreaterEqual(coverage_row["ci95_high"], 0.375)
 
-        pdr_row = by_metric["predictive_diversity_recovery_given_success"]
-        self.assertEqual(pdr_row["conditioning"], "successful_states")
-        self.assertEqual(pdr_row["mean"], 0.375)
+        coverage_auc = by_metric["predictive_coverage_auc_given_success"]
+        self.assertEqual(coverage_auc["conditioning"], "successful_states")
+        self.assertEqual(coverage_auc["mean"], 0.375)
 
     def test_bootstrap_metric_name_includes_slice_labels(self) -> None:
         name = _bootstrap_metric_name(

@@ -8,9 +8,10 @@ from statistics import quantiles
 from scattered_discovery.envs.causal_micro_lab.interventions import Experiment
 from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
     DEFAULT_PREDICTION_TARGET,
-    prediction_target_names,
+    FULL_OUTCOME_CARDINALITY,
     separation_for_modes as predictive_separation_for_modes,
     theoretical_binary_pairwise_max,
+    theoretical_categorical_pairwise_max,
 )
 from scattered_discovery.envs.causal_micro_lab.signatures import (
     ModeRecord,
@@ -58,6 +59,12 @@ class EvidenceState:
     maximum_separation: float
     separation_bucket: str
     family_bucket: str
+    separation_definition: str = "predictive_target_disagreement_v2"
+    separation_targets: tuple[str, ...] = ("Y",)
+    representative_budget: int | None = None
+    oracle_singleton_representation_error: float | None = None
+    oracle_budget_representation_error: float | None = None
+    representative_coverage_opportunity: float | None = None
 
     @property
     def evidence_size(self) -> int:
@@ -77,6 +84,42 @@ class EvidenceState:
         include_private: bool = True,
     ) -> dict[str, object]:
         table = mode_table or build_mode_table()
+        if self.separation_definition == "full_outcome_disagreement_v3":
+            theoretical_max = theoretical_categorical_pairwise_max(
+                self.valid_mode_count,
+                FULL_OUTCOME_CARDINALITY,
+            )
+        else:
+            theoretical_max = theoretical_binary_pairwise_max(self.valid_mode_count)
+        metadata: dict[str, object] = {
+            "valid_mode_count": self.valid_mode_count,
+            "separation_bucket": self.separation_bucket,
+            "mean_separation": self.mean_separation,
+            "minimum_separation": self.minimum_separation,
+            "maximum_separation": self.maximum_separation,
+            "normalized_mean_separation": (
+                self.mean_separation / theoretical_max if theoretical_max else 0.0
+            ),
+            "separation_definition": self.separation_definition,
+            "separation_targets": list(self.separation_targets),
+            "family_bucket": self.family_bucket,
+            "evidence_size": self.evidence_size,
+        }
+        if self.representative_budget is not None:
+            metadata.update(
+                {
+                    "representative_budget": self.representative_budget,
+                    "oracle_singleton_representation_error": (
+                        self.oracle_singleton_representation_error
+                    ),
+                    "oracle_budget_representation_error": (
+                        self.oracle_budget_representation_error
+                    ),
+                    "representative_coverage_opportunity": (
+                        self.representative_coverage_opportunity
+                    ),
+                }
+            )
         record: dict[str, object] = {
             "state_id": self.state_id,
             "visible_experiments": [
@@ -87,25 +130,7 @@ class EvidenceState:
                 for experiment in table.experiments
                 if experiment.experiment_id not in set(self.observed_experiment_ids())
             ],
-            "metadata": {
-                "valid_mode_count": self.valid_mode_count,
-                "separation_bucket": self.separation_bucket,
-                "mean_separation": self.mean_separation,
-                "minimum_separation": self.minimum_separation,
-                "maximum_separation": self.maximum_separation,
-                "normalized_mean_separation": (
-                    self.mean_separation
-                    / theoretical_binary_pairwise_max(self.valid_mode_count)
-                    if self.valid_mode_count > 1
-                    else 0.0
-                ),
-                "separation_definition": "predictive_target_disagreement_v2",
-                "separation_targets": list(
-                    prediction_target_names(DEFAULT_PREDICTION_TARGET)
-                ),
-                "family_bucket": self.family_bucket,
-                "evidence_size": self.evidence_size,
-            },
+            "metadata": metadata,
         }
         if include_private:
             record["private"] = {

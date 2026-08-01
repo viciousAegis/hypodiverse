@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from itertools import combinations
 
 from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
     PredictiveDistanceMatrix,
+    RepresentativeCoverageMatrix,
 )
 from scattered_discovery.envs.causal_micro_lab.signatures import build_mode_table
 from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceState
@@ -30,6 +32,8 @@ def _mean_pairwise_mode_distance(
 def group_metrics(
     results: list[VerificationResult],
     state: EvidenceState,
+    *,
+    representative_matrix: RepresentativeCoverageMatrix | None = None,
 ) -> dict[str, float]:
     valid_mode_ids = [
         result.semantic_mode_id
@@ -68,6 +72,23 @@ def group_metrics(
             for result in results
         ]
     )
+    coverage_matrix = representative_matrix or RepresentativeCoverageMatrix(
+        state.valid_mode_ids,
+        state.observed_experiment_ids(),
+    )
+    full_outcome_separation = coverage_matrix.separation_summary()
+    representative_coverage = coverage_matrix.representative_coverage(valid_mode_ids)
+    full_outcome_generated_separation = (
+        sum(
+            coverage_matrix.distance(left, right)
+            for left, right in combinations(unique_valid, 2)
+        )
+        / math.comb(len(unique_valid), 2)
+        if len(unique_valid) >= 2
+        else 0.0
+    )
+    oracle_singleton_error, _ = coverage_matrix.optimal_subset(1)
+    oracle_budget_error, _ = coverage_matrix.optimal_subset(budget)
     families = {
         tuple(result.mechanism_family)
         for result in results
@@ -102,6 +123,27 @@ def group_metrics(
         "recovered_predictive_dispersion_mass": diversity_recovery.recovered_mass,
         "oracle_predictive_dispersion_mass": diversity_recovery.oracle_mass,
         "predictive_diversity_target_size": float(diversity_recovery.target_size),
+        "predictive_coverage_auc": representative_coverage.coverage_auc,
+        "predictive_representation_error": (
+            representative_coverage.representation_error
+        ),
+        "predictive_placement_regret": representative_coverage.placement_regret,
+        "oracle_representation_error_same_cardinality": (
+            representative_coverage.oracle_error_same_size
+        ),
+        "oracle_predictive_coverage_auc_same_cardinality": (
+            1.0 - representative_coverage.oracle_error_same_size
+        ),
+        "full_outcome_generated_separation": full_outcome_generated_separation,
+        "full_outcome_available_separation": full_outcome_separation.mean,
+        "full_outcome_available_separation_normalized": (
+            full_outcome_separation.normalized_mean
+        ),
+        "predictive_coverage_opportunity_at_budget": max(
+            0.0,
+            oracle_singleton_error - oracle_budget_error,
+        ),
+        "oracle_representation_error_at_budget": oracle_budget_error,
         "generated_to_available_separation": (
             generated_separation / available_separation.mean
             if available_separation.mean > 0
