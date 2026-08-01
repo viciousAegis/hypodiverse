@@ -115,6 +115,7 @@ Tables are written to
 - `decomposition_k16.csv`
 - `separation_association.csv`
 - `combined_rank_k4.csv`
+- `unique_valid_modes_by_k_m.csv`
 
 Figures are written to `docs/figures/causal_micro_lab_v2/`:
 
@@ -123,6 +124,13 @@ Figures are written to `docs/figures/causal_micro_lab_v2/`:
 - `validity_and_pdr_by_k.png`
 - `validity_diversity_decomposition_k16.png`
 - `paired_pdr_vs_validity.png`
+- `unique_valid_modes_heatmap.png`
+
+`unique_valid_modes_heatmap.png` reports the mean number of distinct valid
+semantic modes generated for every `(K,M)` cell. All four panels use the same
+common-success states within each cell, and the annotated `n` records that
+support. The corresponding values are available in
+`unique_valid_modes_by_k_m.csv`.
 
 ## Verbalized-sampling evaluation
 

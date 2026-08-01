@@ -390,6 +390,46 @@ def _combined_ranking(
     return sorted(rows, key=lambda row: float(row["pdr_at_4"]), reverse=True)
 
 
+def _unique_mode_rows(records: list[Record]) -> list[dict[str, Any]]:
+    indexed = {(r.method, r.state_id, r.k): r for r in records}
+    output = []
+    for k in KS:
+        common_success = {
+            record.state_id
+            for record in records
+            if record.method == METHODS[0]
+            and record.k == k
+            and all(
+                indexed[(method, record.state_id, k)].values["pass_at_k"] > 0
+                for method in METHODS
+            )
+        }
+        for method in METHODS:
+            for mode_count in MODE_COUNTS:
+                items = [
+                    indexed[(method, state_id, k)]
+                    for state_id in common_success
+                    if indexed[(method, state_id, k)].mode_count == mode_count
+                ]
+                output.append(
+                    {
+                        "method": method,
+                        "K": k,
+                        "M": mode_count,
+                        "common_success_states": len(items),
+                        "mean_unique_valid_modes": float(
+                            np.mean(
+                                [
+                                    item.values["num_unique_valid_modes"]
+                                    for item in items
+                                ]
+                            )
+                        ),
+                    }
+                )
+    return output
+
+
 def _style_axis(axis: Any) -> None:
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
@@ -659,6 +699,84 @@ def _plot_paired(paired: list[dict[str, Any]], output: Path) -> None:
     plt.close(fig)
 
 
+def _plot_unique_mode_heatmaps(rows: list[dict[str, Any]], output: Path) -> None:
+    fig, axes = plt.subplots(2, 2, figsize=(10.4, 8.0), sharex=True, sharey=True)
+    maximum = max(float(row["mean_unique_valid_modes"]) for row in rows)
+    image_handle = None
+    for axis, method in zip(axes.flat, METHODS, strict=True):
+        matrix = np.asarray(
+            [
+                [
+                    next(
+                        float(row["mean_unique_valid_modes"])
+                        for row in rows
+                        if row["method"] == method
+                        and int(row["M"]) == mode_count
+                        and int(row["K"]) == k
+                    )
+                    for k in KS
+                ]
+                for mode_count in MODE_COUNTS
+            ]
+        )
+        image_handle = axis.imshow(
+            matrix,
+            cmap="viridis",
+            vmin=1.0,
+            vmax=maximum,
+            aspect="auto",
+            interpolation="nearest",
+        )
+        midpoint = (1.0 + maximum) / 2
+        for row_index, mode_count in enumerate(MODE_COUNTS):
+            for column_index, k in enumerate(KS):
+                value = matrix[row_index, column_index]
+                support = next(
+                    int(row["common_success_states"])
+                    for row in rows
+                    if row["method"] == method
+                    and int(row["M"]) == mode_count
+                    and int(row["K"]) == k
+                )
+                axis.text(
+                    column_index,
+                    row_index,
+                    f"{value:.2f}\nn={support}",
+                    ha="center",
+                    va="center",
+                    color="white" if value < midpoint else "#111827",
+                    fontsize=8.8,
+                    fontweight="bold",
+                )
+        axis.set_title(LABELS[method], loc="left", fontweight="bold")
+        axis.set_xticks(range(len(KS)), KS)
+        axis.set_yticks(range(len(MODE_COUNTS)), MODE_COUNTS)
+    for axis in axes[-1, :]:
+        axis.set_xlabel("Generation budget K")
+    for axis in axes[:, 0]:
+        axis.set_ylabel("Available valid modes M")
+    if image_handle is not None:
+        colorbar = fig.colorbar(image_handle, ax=axes, fraction=0.035, pad=0.035)
+        colorbar.set_label("Mean unique valid modes generated")
+    fig.suptitle(
+        "Unique valid modes recovered after successful generation",
+        x=0.08,
+        ha="left",
+        fontsize=15,
+    )
+    fig.text(
+        0.08,
+        0.018,
+        "Each cell uses states where all four methods succeed; n gives the common support.",
+        fontsize=9.2,
+        color="#475569",
+    )
+    fig.subplots_adjust(left=0.08, right=0.88, bottom=0.10, top=0.90, hspace=0.25)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -695,12 +813,14 @@ def main() -> None:
         records, samples=args.bootstrap_samples, rng=rng
     )
     ranking = _combined_ranking(summary, args.reference_summary)
+    unique_modes = _unique_mode_rows(records)
 
     _write_csv(args.output_dir / "headline_by_k.csv", summary)
     _write_csv(args.output_dir / "paired_differences.csv", paired)
     _write_csv(args.output_dir / "decomposition_k16.csv", decomposition)
     _write_csv(args.output_dir / "separation_association.csv", separation_association)
     _write_csv(args.output_dir / "combined_rank_k4.csv", ranking)
+    _write_csv(args.output_dir / "unique_valid_modes_by_k_m.csv", unique_modes)
     _plot_separation(
         records,
         k=4,
@@ -720,6 +840,10 @@ def main() -> None:
         decomposition, args.figure_dir / "validity_diversity_decomposition_k16.png"
     )
     _plot_paired(paired, args.figure_dir / "paired_pdr_vs_validity.png")
+    _plot_unique_mode_heatmaps(
+        unique_modes,
+        args.figure_dir / "unique_valid_modes_heatmap.png",
+    )
 
     print(f"validated_methods={len(METHODS)} states=192 rows={len(records)}")
     print(f"tables={args.output_dir}")
