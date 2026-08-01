@@ -158,7 +158,7 @@ else
   export RUN_NAME="causal_micro_lab_vs_k${VS_K}_${SAFE_MODEL_LABEL}"
 fi
 
-export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_verbalized_sampling_k${VS_K}.yaml"
+export EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_verbalized_sampling_k${VS_K}.yaml}"
 export PYTHON_BIN=python
 export SGLANG_PORT="$((20000 + SLURM_JOB_ID % 20000))"
 
