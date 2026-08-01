@@ -23,15 +23,6 @@ from scattered_discovery.envs.causal_micro_lab.state_generator import EvidenceSt
 METRICS = (
     "pass_at_k",
     "valid_mode_rate",
-    "exact_coverage",
-    "budget_normalized_coverage",
-    "duplicity",
-    "dominant_mode_mass",
-    "effective_mode_count",
-    "family_coverage",
-    "generated_mode_separation",
-    "generated_to_available_separation",
-    "predictive_diversity_recovery",
 )
 CONDITIONAL_METRICS = (
     ("modes_recovered_given_success", "num_unique_valid_modes"),
@@ -50,10 +41,14 @@ CONDITIONAL_METRICS = (
         "generated_to_available_separation_given_success",
         "generated_to_available_separation",
     ),
+    (
+        "predictive_diversity_recovery_given_success",
+        "predictive_diversity_recovery",
+    ),
 )
 PRIMARY_METRICS = (
     "pass_at_k",
-    "predictive_diversity_recovery",
+    "predictive_diversity_recovery_given_success",
     "modes_recovered_given_success",
     "fraction_modes_recovered_given_success",
 )
@@ -155,8 +150,14 @@ def _aggregate_rows(
     for labels, items in sorted(grouped.items(), key=lambda item: item[0]):
         result = {key: value for key, value in zip(group_keys, labels, strict=True)}
         result["support_states"] = len(items)
+        successes = [item for item in items if float(item["pass_at_k"]) > 0]
+        result["successful_states"] = len(successes)
         for metric in METRICS:
             result[metric] = _mean([float(item[metric]) for item in items])
+        for output_metric, source_metric in CONDITIONAL_METRICS:
+            result[output_metric] = _mean(
+                [float(item[source_metric]) for item in successes]
+            )
         output.append(result)
     return output
 
@@ -177,8 +178,8 @@ def _aggregate_primary_rows(
                 "support_states": len(items),
                 "successful_states": len(successes),
                 "pass_at_k": _mean([float(item["pass_at_k"]) for item in items]),
-                "predictive_diversity_recovery": _mean(
-                    [float(item["predictive_diversity_recovery"]) for item in items]
+                "predictive_diversity_recovery_given_success": _mean(
+                    [float(item["predictive_diversity_recovery"]) for item in successes]
                 ),
                 "modes_recovered_given_success": _mean(
                     [float(item["num_unique_valid_modes"]) for item in successes]

@@ -269,7 +269,7 @@ def _log_wandb_bootstrap_report(
 
     primary_metrics = {
         "pass_at_k",
-        "predictive_diversity_recovery",
+        "predictive_diversity_recovery_given_success",
         "modes_recovered_given_success",
         "fraction_modes_recovered_given_success",
     }

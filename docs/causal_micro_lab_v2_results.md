@@ -10,7 +10,8 @@ training methods improve diversity.
 - States: 192, with 48 states for each `M` in `{4, 8, 12, 16}`
 - Generation bank: 16 independent completions per state
 - Reported prefixes: `K` in `{4, 8, 12, 16}` from the same completion bank
-- Primary diversity metric: Predictive Diversity Recovery (PDR)
+- Primary diversity metric: Predictive Diversity Recovery (PDR), conditioned
+  on the state having at least one valid generated hypothesis
 - Confidence intervals: paired or ordinary state bootstrap, as appropriate
 - Model runs: base Qwen3-4B, Validity GRPO, IPS-GRPO, and Latent-IPS v2
 
@@ -29,19 +30,25 @@ MPLCONFIGDIR=/tmp/cml-matplotlib \
 
 ## Headline results
 
-| Method | Pass@4 | Valid rate@4 | PDR@4 | Pass@16 | Valid rate@16 | PDR@16 |
+`Pass@K` and valid-output rate are unconditional. PDR and every other diversity
+or coverage statistic are conditional on success. Paired diversity comparisons
+use only states on which both methods succeed.
+
+| Method | Pass@4 | Valid rate@4 | PDR@4 given success | Pass@16 | Valid rate@16 | PDR@16 given success |
 |---|---:|---:|---:|---:|---:|---:|
-| Base | 0.677 | 0.344 | 0.040 | 0.906 | 0.366 | 0.072 |
-| Validity GRPO | 0.844 | 0.568 | 0.099 | 0.953 | 0.562 | 0.104 |
-| IPS-GRPO | 0.880 | 0.618 | 0.099 | 0.964 | 0.604 | 0.101 |
-| Latent-IPS v2 | 0.766 | 0.486 | 0.080 | 0.932 | 0.509 | 0.086 |
+| Base | 0.677 | 0.344 | 0.060 | 0.906 | 0.366 | 0.079 |
+| Validity GRPO | 0.844 | 0.568 | 0.118 | 0.953 | 0.562 | 0.109 |
+| IPS-GRPO | 0.880 | 0.618 | 0.112 | 0.964 | 0.604 | 0.105 |
+| Latent-IPS v2 | 0.766 | 0.486 | 0.105 | 0.932 | 0.509 | 0.092 |
 
-At `K=16`, Validity GRPO improves PDR over the base model by `0.032`
-(paired 95% CI `[0.007, 0.059]`). Neither diversity-oriented method reliably
-improves PDR over Validity GRPO:
+At `K=16`, Validity GRPO improves PDR over the base model by `0.028` on
+their 168 common successful states (paired 95% CI `[0.002, 0.055]`). Neither
+diversity-oriented method reliably improves PDR over Validity GRPO:
 
-- IPS-GRPO minus Validity GRPO: `-0.003` (`[-0.029, 0.021]`).
-- Latent-IPS v2 minus Validity GRPO: `-0.019` (`[-0.046, 0.010]`).
+- IPS-GRPO minus Validity GRPO: `-0.004` (`[-0.031, 0.022]`; 179
+  common successful states).
+- Latent-IPS v2 minus Validity GRPO: `-0.010` (`[-0.040, 0.019]`; 172
+  common successful states).
 
 IPS-GRPO does improve the valid-output rate over Validity GRPO by `0.043` at
 `K=16` (`[0.008, 0.078]`), but its exact-coverage and PDR intervals overlap
@@ -69,11 +76,12 @@ underperforms on the second mechanism in the common comparison subset.
 The continuous plots stratify by `M` and bin only for visualization. The
 underlying analysis remains state-level. `separation_association.csv` reports a
 bootstrap slope for each method, `K`, and `M`: the expected PDR change for a
-`0.1` increase in available predictive separation. At `K=16`, every interval
-contains zero. This should not be described as evidence that separation is
-irrelevant. PDR is normalized by the diversity available in each state, so a
-flat PDR curve means a method recovers a similar fraction of the opportunity as
-the opportunity changes.
+`0.1` increase in available predictive separation. These curves use only states
+where all four methods succeed, so every method is compared on the same support.
+There is no consistent positive relation at `K=16`. This should not be described
+as evidence that separation is irrelevant. PDR is normalized by the diversity
+available in each state, so a flat PDR curve means a method recovers a similar
+fraction of the opportunity as the opportunity changes.
 
 ## Reference-policy context
 
@@ -86,11 +94,11 @@ baselines. At `K=4`, their PDR ranking is:
 | Oracle dispersed | 1.000 |
 | Uniform distinct | 0.833 |
 | Uniform sampling | 0.545 |
-| Validity GRPO | 0.099 |
-| IPS-GRPO | 0.099 |
-| Latent-IPS v2 | 0.080 |
+| Validity GRPO | 0.118 |
+| IPS-GRPO | 0.112 |
+| Latent-IPS v2 | 0.105 |
+| Base | 0.060 |
 | Concentrated sampling | 0.042 |
-| Base | 0.040 |
 | Collapsed | 0.000 |
 
 The large gap between model policies and uniform valid-mode sampling shows that

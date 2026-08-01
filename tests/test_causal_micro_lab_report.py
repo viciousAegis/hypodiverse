@@ -13,6 +13,7 @@ from scattered_discovery.envs.causal_micro_lab.eval import (
     _log_wandb_bootstrap_report,
 )
 from scattered_discovery.envs.causal_micro_lab.report import (
+    _aggregate_rows,
     _aggregate_primary_rows,
     _bootstrap_grouped_rows,
 )
@@ -72,12 +73,26 @@ class CausalMicroLabReportTests(unittest.TestCase):
         self.assertEqual(result["support_states"], 4)
         self.assertEqual(result["successful_states"], 2)
         self.assertEqual(result["pass_at_k"], 0.5)
-        self.assertEqual(result["predictive_diversity_recovery"], 0.1875)
+        self.assertEqual(
+            result["predictive_diversity_recovery_given_success"],
+            0.375,
+        )
         self.assertEqual(result["modes_recovered_given_success"], 1.5)
         self.assertEqual(
             result["fraction_modes_recovered_given_success"],
             0.375,
         )
+
+    def test_general_aggregates_condition_diversity_on_success(self) -> None:
+        result = _aggregate_rows(self.rows, ("K", "M"))[0]
+
+        self.assertEqual(result["pass_at_k"], 0.5)
+        self.assertEqual(result["successful_states"], 2)
+        self.assertEqual(
+            result["predictive_diversity_recovery_given_success"],
+            0.375,
+        )
+        self.assertNotIn("predictive_diversity_recovery", result)
 
     def test_bootstrap_resamples_states_with_correct_conditioning(self) -> None:
         results = _bootstrap_grouped_rows(
@@ -109,6 +124,10 @@ class CausalMicroLabReportTests(unittest.TestCase):
         self.assertEqual(coverage_row["mean"], 0.375)
         self.assertLessEqual(coverage_row["ci95_low"], 0.375)
         self.assertGreaterEqual(coverage_row["ci95_high"], 0.375)
+
+        pdr_row = by_metric["predictive_diversity_recovery_given_success"]
+        self.assertEqual(pdr_row["conditioning"], "successful_states")
+        self.assertEqual(pdr_row["mean"], 0.375)
 
     def test_bootstrap_metric_name_includes_slice_labels(self) -> None:
         name = _bootstrap_metric_name(

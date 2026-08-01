@@ -32,21 +32,22 @@ COLORS = {
 MARKERS = {"base": "o", "validity": "s", "ips": "^", "latent_ips": "D"}
 KS = (4, 8, 12, 16)
 MODE_COUNTS = (4, 8, 12, 16)
-SUMMARY_METRICS = (
+UNCONDITIONAL_SUMMARY_METRICS = (
     "pass_at_k",
     "valid_mode_rate",
-    "num_unique_valid_modes",
-    "exact_coverage",
-    "predictive_diversity_recovery",
-    "effective_mode_count",
-    "duplicity",
 )
-PAIRED_METRICS = (
+CONDITIONAL_SUMMARY_METRICS = {
+    "num_unique_valid_modes_given_success": "num_unique_valid_modes",
+    "exact_coverage_given_success": "exact_coverage",
+    "predictive_diversity_recovery_given_success": "predictive_diversity_recovery",
+    "effective_mode_count_given_success": "effective_mode_count",
+    "duplicity_given_success": "duplicity",
+}
+UNCONDITIONAL_PAIRED_METRICS = (
     "pass_at_k",
     "valid_mode_rate",
-    "exact_coverage",
-    "predictive_diversity_recovery",
 )
+CONDITIONAL_PAIRED_METRICS = ("exact_coverage", "predictive_diversity_recovery")
 
 
 @dataclass(frozen=True)
@@ -161,13 +162,24 @@ def _summary_rows(
                 "K": k,
                 "states": len(items),
             }
-            for metric in SUMMARY_METRICS:
+            successes = [item for item in items if item.values["pass_at_k"] > 0]
+            row["successful_states"] = len(successes)
+            for metric in UNCONDITIONAL_SUMMARY_METRICS:
                 mean, low, high = _bootstrap_mean(
                     (r.values[metric] for r in items), rng=rng, samples=samples
                 )
                 row[metric] = mean
                 row[f"{metric}_ci95_low"] = low
                 row[f"{metric}_ci95_high"] = high
+            for output_metric, source_metric in CONDITIONAL_SUMMARY_METRICS.items():
+                mean, low, high = _bootstrap_mean(
+                    (r.values[source_metric] for r in successes),
+                    rng=rng,
+                    samples=samples,
+                )
+                row[output_metric] = mean
+                row[f"{output_metric}_ci95_low"] = low
+                row[f"{output_metric}_ci95_high"] = high
             output.append(row)
     return output
 
@@ -183,11 +195,24 @@ def _paired_rows(
             if method == baseline:
                 continue
             for k in KS:
-                for metric in PAIRED_METRICS:
+                for metric in (
+                    *UNCONDITIONAL_PAIRED_METRICS,
+                    *CONDITIONAL_PAIRED_METRICS,
+                ):
+                    conditional = metric in CONDITIONAL_PAIRED_METRICS
+                    comparison_states = [
+                        state_id
+                        for state_id in state_ids
+                        if not conditional
+                        or (
+                            indexed[(method, state_id, k)].values["pass_at_k"] > 0
+                            and indexed[(baseline, state_id, k)].values["pass_at_k"] > 0
+                        )
+                    ]
                     differences = [
                         indexed[(method, state_id, k)].values[metric]
                         - indexed[(baseline, state_id, k)].values[metric]
-                        for state_id in state_ids
+                        for state_id in comparison_states
                     ]
                     mean, low, high = _bootstrap_mean(
                         differences, rng=rng, samples=samples
@@ -198,6 +223,9 @@ def _paired_rows(
                             "method": method,
                             "K": k,
                             "metric": metric,
+                            "conditioning": (
+                                "common_success" if conditional else "all_states"
+                            ),
                             "states": len(differences),
                             "mean_difference": mean,
                             "ci95_low": low,
@@ -234,7 +262,11 @@ def _decomposition_rows(
         specs = (
             ("pass_at_k", items, "pass_at_k"),
             ("valid_mode_rate", items, "valid_mode_rate"),
-            ("predictive_diversity_recovery", items, "predictive_diversity_recovery"),
+            (
+                "predictive_diversity_recovery_given_success",
+                successes,
+                "predictive_diversity_recovery",
+            ),
             ("coverage_given_success", successes, "exact_coverage"),
             (
                 "relative_pairwise_separation_common_multimode",
@@ -262,6 +294,20 @@ def _decomposition_rows(
 def _separation_association_rows(
     records: list[Record], *, samples: int, rng: np.random.Generator
 ) -> list[dict[str, Any]]:
+    indexed = {(r.method, r.state_id, r.k): r for r in records}
+    common_success = {
+        k: {
+            record.state_id
+            for record in records
+            if record.method == METHODS[0]
+            and record.k == k
+            and all(
+                indexed[(method, record.state_id, k)].values["pass_at_k"] > 0
+                for method in METHODS
+            )
+        }
+        for k in KS
+    }
     output = []
     for method in METHODS:
         for k in KS:
@@ -272,6 +318,7 @@ def _separation_association_rows(
                     if record.method == method
                     and record.k == k
                     and record.mode_count == mode_count
+                    and record.state_id in common_success[k]
                 ]
                 x = np.asarray([record.separation for record in items], dtype=float)
                 y = np.asarray(
@@ -333,9 +380,9 @@ def _combined_ranking(
         {
             "name": row["method"],
             "kind": "model",
-            "pdr_at_4": row["predictive_diversity_recovery"],
-            "ci95_low": row["predictive_diversity_recovery_ci95_low"],
-            "ci95_high": row["predictive_diversity_recovery_ci95_high"],
+            "pdr_at_4": row["predictive_diversity_recovery_given_success"],
+            "ci95_low": row["predictive_diversity_recovery_given_success_ci95_low"],
+            "ci95_high": row["predictive_diversity_recovery_given_success_ci95_high"],
         }
         for row in summary_rows
         if row["K"] == 4
@@ -362,13 +409,27 @@ def _plot_separation(
     samples: int,
     rng: np.random.Generator,
 ) -> None:
+    indexed = {(r.method, r.state_id, r.k): r for r in records}
+    common_success = {
+        record.state_id
+        for record in records
+        if record.method == METHODS[0]
+        and record.k == k
+        and all(
+            indexed[(method, record.state_id, k)].values["pass_at_k"] > 0
+            for method in METHODS
+        )
+    }
     fig, axes = plt.subplots(2, 2, figsize=(11.6, 7.6), sharex=True, sharey=True)
     for axis, mode_count in zip(axes.flat, MODE_COUNTS, strict=True):
         state_x = sorted(
             {
                 r.separation
                 for r in records
-                if r.method == "base" and r.k == k and r.mode_count == mode_count
+                if r.method == "base"
+                and r.k == k
+                and r.mode_count == mode_count
+                and r.state_id in common_success
             }
         )
         axis.vlines(
@@ -383,7 +444,10 @@ def _plot_separation(
             items = [
                 r
                 for r in records
-                if r.method == method and r.k == k and r.mode_count == mode_count
+                if r.method == method
+                and r.k == k
+                and r.mode_count == mode_count
+                and r.state_id in common_success
             ]
             chunks = _bins(items, 6)
             xs = [float(np.mean([r.separation for r in chunk])) for chunk in chunks]
@@ -408,14 +472,24 @@ def _plot_separation(
                 markersize=4.2,
                 label=LABELS[method],
             )
-        axis.set_title(f"M = {mode_count}", loc="left", fontweight="bold")
+        support = sum(
+            1
+            for state_id in common_success
+            if indexed[(METHODS[0], state_id, k)].mode_count == mode_count
+        )
+        axis.set_title(
+            f"M = {mode_count} (common successful states: {support})",
+            loc="left",
+            fontweight="bold",
+            fontsize=10.5,
+        )
         axis.set_xlim(0.025, 0.505)
         axis.set_ylim(-0.01, 0.42)
         _style_axis(axis)
     for axis in axes[-1, :]:
         axis.set_xlabel("Available predictive separation")
     for axis in axes[:, 0]:
-        axis.set_ylabel(f"Predictive Diversity Recovery@{k}")
+        axis.set_ylabel(f"PDR@{k} given common success")
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(
         handles,
@@ -435,7 +509,7 @@ def _plot_separation(
     fig.text(
         0.075,
         0.018,
-        "Points average eight adjacent states on the continuous axis; bands are state-bootstrap 95% confidence intervals.",
+        "Curves use only states where all four methods succeed; bands are state-bootstrap 95% confidence intervals.",
         fontsize=9.2,
         color="#475569",
     )
@@ -450,9 +524,9 @@ def _plot_scaling(summary: list[dict[str, Any]], output: Path) -> None:
     specs = (
         ("pass_at_k", "At least one valid hypothesis", "Pass@K"),
         (
-            "predictive_diversity_recovery",
+            "predictive_diversity_recovery_given_success",
             "Predictive diversity recovered",
-            "PDR@K",
+            "PDR@K given success",
         ),
     )
     for axis, (metric, title, ylabel) in zip(axes, specs, strict=True):
@@ -490,7 +564,11 @@ def _plot_decomposition(rows: list[dict[str, Any]], output: Path) -> None:
     specs = (
         ("pass_at_k", "Pass@16", (0, 1.05)),
         ("valid_mode_rate", "Valid-output rate", (0, 0.72)),
-        ("predictive_diversity_recovery", "PDR@16", (0, 0.14)),
+        (
+            "predictive_diversity_recovery_given_success",
+            "PDR@16 given success",
+            (0, 0.16),
+        ),
         (
             "relative_pairwise_separation_common_multimode",
             "Relative pairwise separation\n(common 85 states)",
@@ -568,8 +646,11 @@ def _plot_paired(paired: list[dict[str, Any]], output: Path) -> None:
     axis.axhline(0, color="#111827", linewidth=1, linestyle="--")
     axis.set_xticks(KS)
     axis.set_xlabel("Generation budget K")
-    axis.set_ylabel("Paired difference in PDR")
-    axis.set_title("No diversity method reliably beats Validity GRPO", loc="left")
+    axis.set_ylabel("Paired difference in PDR given common success")
+    axis.set_title(
+        "No diversity method reliably beats Validity GRPO after success",
+        loc="left",
+    )
     axis.legend(frameon=False, fontsize=9)
     _style_axis(axis)
     fig.tight_layout()
