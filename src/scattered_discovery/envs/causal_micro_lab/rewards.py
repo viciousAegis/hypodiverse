@@ -78,6 +78,7 @@ def group_metrics(
     )
     full_outcome_separation = coverage_matrix.separation_summary()
     representative_coverage = coverage_matrix.representative_coverage(valid_mode_ids)
+    diversity_at_4 = coverage_matrix.diversity_at_k(valid_mode_ids, k=4)
     full_outcome_generated_separation = (
         sum(
             coverage_matrix.distance(left, right)
@@ -124,6 +125,10 @@ def group_metrics(
         "oracle_predictive_dispersion_mass": diversity_recovery.oracle_mass,
         "predictive_diversity_target_size": float(diversity_recovery.target_size),
         "predictive_coverage_auc": representative_coverage.coverage_auc,
+        "diversity_at_4": diversity_at_4.score,
+        "diversity_at_4_defined": float(diversity_at_4.defined),
+        "oracle_diversity_at_4": diversity_at_4.oracle_score,
+        "normalized_diversity_at_4": diversity_at_4.normalized_score,
         "predictive_representation_error": (
             representative_coverage.representation_error
         ),

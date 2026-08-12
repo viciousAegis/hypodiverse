@@ -3,13 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "scattered-discovery"
+name = "hypodiverse"
 version = "0.1.0"
-description = "Interactive synthetic causal discovery environment with DSL-generated hypotheses."
+description = "HypoDiverse: an enumerable benchmark for predictive diversity in verifiable hypothesis generation."
+license = { file = "LICENSE" }
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
   "cachetools>=7.1.4",
+  "huggingface_hub>=0.24.0",
   "pyyaml>=6.0.2",
 ]
 
@@ -17,7 +19,6 @@ dependencies = [
 verl = [
   "datasets==2.20.0",
   "fsspec==2024.5.0",
-  "huggingface_hub>=0.24.0",
   "pandas>=2.2.0",
   "pyarrow>=16.0.0,<21.0.0",
   "wandb>=0.17.0",
@@ -25,9 +26,20 @@ verl = [
 ]
 analysis = [
   "matplotlib>=3.8.0",
+  "scienceplots>=2.1.1",
 ]
+[project.urls]
+Homepage = "https://github.com/viciousAegis/hypodiverse"
+Repository = "https://github.com/viciousAegis/hypodiverse"
+Dataset = "https://huggingface.co/datasets/viciousa3gis/hypodiverse"
 
 [project.scripts]
+hypodiverse-build-dataset = "scattered_discovery.envs.causal_micro_lab.cli:build_split_dataset_main"
+hypodiverse-download-data = "scattered_discovery.release.download:main"
+hypodiverse-eval = "scattered_discovery.envs.causal_micro_lab.eval:main"
+hypodiverse-report = "scattered_discovery.envs.causal_micro_lab.report:main"
+hypodiverse-closed-loop-eval = "scattered_discovery.envs.causal_micro_lab.cli:run_closed_loop_eval_main"
+hypodiverse-viewer = "scattered_discovery.causal_micro_lab_viewer:main"
 scattered-discovery-eval = "scattered_discovery.eval.run:main"
 scattered-discovery-eval-envspecs = "scattered_discovery.eval.envspecs:main"
 scattered-discovery-graph-gallery = "scattered_discovery.graph_gallery:main"
@@ -50,9 +62,6 @@ scattered-discovery-viewer = "scattered_discovery.viewer:main"
 
 [tool.uv]
 package = true
-environments = [
-  "sys_platform == 'linux' and python_full_version >= '3.11' and python_full_version < '3.13'",
-]
 
 [tool.hatch.build.targets.wheel]
 packages = [

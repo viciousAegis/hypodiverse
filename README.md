@@ -17,9 +17,10 @@ enumerable, the verifier can determine exactly:
 - how strongly the best fixed-size subset disagrees on unresolved experiments,
   reported as Diversity@K.
 
-The repository contains the benchmark engine, frozen datasets, GRPO baseline,
-Latent Inverse Frequency Policy Optimisation (LIFPO), SGLang/veRL launchers,
-evaluation code, and thesis analysis scripts.
+The repository contains the benchmark engine, a pinned dataset downloader, the
+GRPO baseline, Latent Inverse Frequency Policy Optimisation (LIFPO), SGLang/veRL
+launchers, evaluation code, and thesis analysis scripts. Dataset rows are
+published separately on Hugging Face and are not tracked in Git.
 
 ## Released Artifacts
 
@@ -27,8 +28,8 @@ The release uses three Hugging Face repositories:
 
 - [Dataset: `viciousa3gis/hypodiverse`](https://huggingface.co/datasets/viciousa3gis/hypodiverse),
   revision `d16867cc49836f72ace9e3667164fa6e4ae76eda`
-- Model: `viciousa3gis/hypodiverse-grpo` (published after cluster merge)
-- Model: `viciousa3gis/hypodiverse-lifpo` (published after cluster merge)
+- [GRPO model: `viciousa3gis/hypodiverse-grpo`](https://huggingface.co/viciousa3gis/hypodiverse-grpo)
+- [LIFPO model: `viciousa3gis/hypodiverse-lifpo`](https://huggingface.co/viciousa3gis/hypodiverse-lifpo)
 
 Model cards pin the immutable dataset revision used by their training and
 evaluation. See [the reproducibility guide](docs/causal_micro_lab_reproducibility.md)
@@ -78,10 +79,12 @@ print(dataset["train"][0])
 
 The rows retain the exact veRL structure consumed by training. The frozen test
 split contains 192 states, balanced across compatible-hypothesis counts
-`M = 4, 8, 12, 16`. Its source file is tracked at:
+`M = 4, 8, 12, 16`. Training and offline-evaluation rows are not duplicated in
+this Git repository. The downloader materializes and verifies all three frozen
+splits at their canonical local paths:
 
-```text
-eval_sets/causal_micro_lab/final_v3/verl_test.jsonl
+```bash
+hypodiverse-download-data
 ```
 
 Do not regenerate data when reproducing the reported model results. Use the
@@ -89,7 +92,7 @@ released files and revision. Dataset generation remains available for new
 experiments:
 
 ```bash
-causal-micro-lab-build-split-dataset \
+hypodiverse-build-dataset \
   --preset trainable \
   --output-dir data/causal_micro_lab/trainable \
   --seed 1
@@ -103,7 +106,7 @@ Both methods use the same frozen training rows and generation budget.
 
 ```bash
 # Validity-reward GRPO baseline
-sbatch scripts/cluster/sbatch_causal_micro_lab_validity_grpo.slurm
+sbatch scripts/cluster/sbatch_causal_micro_lab_grpo.slurm
 
 # LIFPO
 sbatch scripts/cluster/sbatch_causal_micro_lab_lifpo.slurm
@@ -111,8 +114,6 @@ sbatch scripts/cluster/sbatch_causal_micro_lab_lifpo.slurm
 
 The public LIFPO configuration is
 [`configs/verl/runs/causal_micro_lab_cluster_lifpo.yaml`](configs/verl/runs/causal_micro_lab_cluster_lifpo.yaml).
-Historical configuration aliases remain importable only so completed runs and
-checkpoints can still be resolved.
 
 ## Evaluation
 
@@ -121,7 +122,7 @@ Metrics for budgets 4, 8, 12, and 16 use prefixes of that same bank. This keeps
 the budget comparison paired and avoids rerunning independent samples.
 
 ```bash
-bash scripts/cluster/submit_causal_micro_lab_v3_evals.sh
+bash scripts/cluster/submit_hypodiverse_evals.sh
 ```
 
 The evaluator uses:
@@ -145,9 +146,32 @@ The primary measurements are:
 - **Diversity@K:** mean pairwise predictive disagreement of the most diverse
   `K` hypotheses recovered within a fixed valid-generation budget.
 
-Evaluation outputs are written beneath
-`artifacts/causal_micro_lab_final_eval_v3/` and logged to W&B. The reporting
+Evaluation outputs are written beneath `artifacts/hypodiverse_eval/` and logged
+to W&B. The reporting
 pipeline derives all budget prefixes from the same episode bank.
+
+The canonical comparison tables and figures can then be generated from the
+three report directories:
+
+```bash
+python scripts/analyze_hypodiverse_results.py \
+  --report base=/path/to/base/report \
+  --report grpo=/path/to/grpo/report \
+  --report lifpo=/path/to/lifpo/report
+```
+
+For the model-backed closed loop, submit the same three released models with:
+
+```bash
+sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm base
+sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm grpo
+sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm lifpo
+```
+
+The small closed-loop world set is version-controlled under
+`eval_sets/causal_micro_lab/closed_loop_v1/` because its original selection
+excluded historical local datasets that are not part of the public release.
+The launcher verifies its SHA256 digest before evaluation.
 
 ## Publishing Exact Artifacts
 
@@ -175,17 +199,14 @@ through `huggingface_hub`/Xet.
 ```text
 src/scattered_discovery/envs/causal_micro_lab/  enumeration, prompts, verifier
 src/scattered_discovery/verl/                   GRPO and LIFPO integration
-configs/verl/runs/                              canonical training configs
-configs/verl/eval/                              frozen evaluation configs
-eval_sets/causal_micro_lab/final_v3/            frozen test set and manifest
+configs/verl/runs/                              GRPO and LIFPO training configs
+configs/verl/eval/hypodiverse_*.yaml             frozen evaluation configs
+src/scattered_discovery/release/download.py      pinned dataset downloader
 scripts/cluster/                                Slurm training/evaluation tools
 scripts/                                       analysis and plotting
 tests/                                         engine, verifier, metric, launcher tests
 docs/causal_micro_lab_reproducibility.md        exact end-to-end procedure
 ```
-
-The repository also retains earlier exploratory environments and analyses. They
-are not required to reproduce the HypoDiverse results above.
 
 ## Reproducibility Contract
 
@@ -202,3 +223,7 @@ The release manifests record SHA256 hashes, row counts, code revision, source
 configuration hashes, and split-overlap checks. See the detailed
 [release checklist](docs/causal_micro_lab_reproducibility.md#verification-checklist)
 before publishing derived results.
+
+## License
+
+HypoDiverse is released under the [Apache License 2.0](LICENSE).

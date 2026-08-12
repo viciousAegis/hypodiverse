@@ -176,6 +176,32 @@ class PredictiveDiversityTests(unittest.TestCase):
         self.assertGreaterEqual(clustered_result.placement_regret, 0.0)
         self.assertLessEqual(clustered_result.coverage_auc, 1.0)
 
+    def test_diversity_at_k_uses_best_generated_subset_and_preserves_duplicates(self):
+        matrix = RepresentativeCoverageMatrix(
+            self.state.valid_mode_ids,
+            self.state.observed_experiment_ids(),
+            mode_table=self.table,
+        )
+        oracle = matrix.diversity_at_k(self.state.valid_mode_ids, k=4)
+        self.assertTrue(oracle.defined)
+        self.assertAlmostEqual(oracle.score, oracle.oracle_score)
+        self.assertAlmostEqual(oracle.normalized_score, 1.0)
+
+        repeated = matrix.diversity_at_k((self.state.valid_mode_ids[0],) * 4, k=4)
+        self.assertTrue(repeated.defined)
+        self.assertEqual(repeated.score, 0.0)
+        self.assertEqual(len(repeated.selected_mode_ids), 4)
+
+        under_budget = matrix.diversity_at_k(self.state.valid_mode_ids[:3], k=4)
+        self.assertFalse(under_budget.defined)
+        self.assertEqual(under_budget.score, 0.0)
+
+        candidates = self.state.valid_mode_ids[:6]
+        expected_score, expected_subset = matrix.most_diverse_subset(candidates, 4)
+        result = matrix.diversity_at_k(candidates, k=4)
+        self.assertAlmostEqual(result.score, expected_score)
+        self.assertEqual(result.selected_mode_ids, expected_subset)
+
     def test_v3_geometry_metadata_round_trips(self):
         annotated = annotate_representative_geometry(
             self.state,

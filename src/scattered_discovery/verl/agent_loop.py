@@ -544,29 +544,24 @@ class CausalMicroLabAgentLoop(AgentLoopBase):  # type: ignore[misc]
         )
 
 
-@register("cd_grpo_agent_loop")
-class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
-    """Single-shot rollout with an oracle-free train-time reward payload."""
+class VerifiableHypothesisAgentLoop(AgentLoopBase):  # type: ignore[misc]
+    """Single-shot rollout with verifiable hypothesis metadata."""
 
     async def run(self, sampling_params: dict[str, Any], **kwargs) -> Any:
         if AgentLoopOutput is None or AgentLoopMetrics is None:
-            raise RuntimeError("CDGRPOAgentLoop requires veRL to be installed.")
+            raise RuntimeError(
+                "VerifiableHypothesisAgentLoop requires veRL to be installed."
+            )
 
         env_spec = json.loads(_as_text(kwargs["env_spec_json"]))
         state_record = json.loads(_as_text(kwargs["state_json"]))
         task_config = env_spec.get("task") or {}
         agent_config = env_spec.get("agent") or {}
-        method_config = self.config.algorithm.get(
-            "lifpo",
-            self.config.algorithm.get(
-                "cd_grpo",
-                self.config.algorithm.get("ips_grpo", {}),
-            ),
-        )
+        method_config = self.config.algorithm.get("lifpo", {})
         max_response_length = int(self.rollout_config.response_length)
         request_id = _as_text(kwargs.get("uid", uuid4().hex))
         rollout_index = int(kwargs.get("session_id", 0))
-        latent_enabled = bool(method_config.get("latent_enabled", False))
+        latent_enabled = bool(method_config.get("latent_enabled", True))
         latent_count = int(method_config.get("latent_count", 8))
         latent_negative_offset = int(
             method_config.get(
@@ -648,7 +643,7 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         length_penalty_start = _config_int(
             method_config,
             "length_penalty_start",
-            "CD_GRPO_LENGTH_PENALTY_START",
+            "LIFPO_LENGTH_PENALTY_START",
             _config_int(
                 agent_config,
                 "length_penalty_start",
@@ -731,9 +726,9 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "reward_length_cap": float(length_penalty),
             "reward_syntax_valid": float(syntax_reward),
             "reward_valid_hypothesis": float(validity_reward),
-            "cd_probe_count": float(len(consequence.probe_experiment_ids)),
-            "ips_behavior_hash_hi": float(behavior_hash_hi),
-            "ips_behavior_hash_lo": float(behavior_hash_lo),
+            "probe_count": float(len(consequence.probe_experiment_ids)),
+            "behavior_hash_hi": float(behavior_hash_hi),
+            "behavior_hash_lo": float(behavior_hash_lo),
             "valid_mode_count": float(eval_payload["valid_mode_count"]),
             "latent_enabled": float(latent_enabled),
             "latent_id": float(latent_id),
@@ -749,14 +744,14 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             # TransferQueue consistently preserves reward_extra_info across veRL
             # versions. Keep scalar JSON copies because TensorDict conversion
             # can drop nested mappings in some veRL/TransferQueue versions.
-            "cd_reward_payload": reward_payload,
-            "cd_eval_payload": eval_payload,
-            "cd_reward_payload_json": json.dumps(
+            "reward_payload": reward_payload,
+            "eval_payload": eval_payload,
+            "reward_payload_json": json.dumps(
                 reward_payload,
                 sort_keys=True,
                 separators=(",", ":"),
             ),
-            "cd_eval_payload_json": json.dumps(
+            "eval_payload_json": json.dumps(
                 eval_payload,
                 sort_keys=True,
                 separators=(",", ":"),
@@ -766,8 +761,8 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             "min_global_steps": 0,
             "max_global_steps": 0,
             "reward_extra_info": reward_extra_info,
-            "cd_reward_payload": reward_payload,
-            "cd_eval_payload": eval_payload,
+            "reward_payload": reward_payload,
+            "eval_payload": eval_payload,
             "transcript": transcript,
         }
         if counterfactual_prompt_ids is not None:
@@ -789,30 +784,3 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
             ),
             extra_fields=output_extra_fields,
         )
-
-
-@register("ips_grpo_agent_loop")
-class IPSGRPOAgentLoop(CDGRPOAgentLoop):  # type: ignore[misc]
-    """Consequence-aware rollout used by the IPS-GRPO trainer."""
-
-    async def run(self, sampling_params: dict[str, Any], **kwargs) -> Any:
-        output = await super().run(sampling_params, **kwargs)
-        reward_extra_info = output.extra_fields.get("reward_extra_info", {})
-        for key in (
-            "cd_reward_payload",
-            "cd_eval_payload",
-            "cd_reward_payload_json",
-            "cd_eval_payload_json",
-        ):
-            reward_extra_info.pop(key, None)
-            output.extra_fields.pop(key, None)
-        from scattered_discovery.verl.ips_grpo_trainer import (
-            normalize_ips_reward_extra_info,
-        )
-
-        output.extra_fields["reward_extra_info"] = normalize_ips_reward_extra_info(
-            reward_extra_info,
-            reward_score=output.reward_score,
-        )
-        output.extra_fields.update(output.extra_fields["reward_extra_info"])
-        return output

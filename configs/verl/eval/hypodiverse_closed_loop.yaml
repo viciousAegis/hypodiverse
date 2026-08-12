@@ -1,0 +1,35 @@
+# Frozen model-backed closed-loop evaluation shared by Base, GRPO, and LIFPO.
+
+model_id: Qwen/Qwen3-4B
+download_model: 1
+eval_file: eval_sets/causal_micro_lab/closed_loop_v1/states.jsonl
+output_dir: artifacts/hypodiverse_closed_loop
+run_name: hypodiverse_closed_loop_base
+
+initial_mode_counts: 16,32
+trajectories_per_count: 64
+rollouts_per_spec: 8
+max_steps: 8
+eval_workers: 128
+max_response_length: 6000
+temperature: 1.0
+top_p: 1.0
+think: true
+thinking_fallback: true
+fallback_max_response_length: 256
+fallback_temperature: 0.0
+request_timeout_s: 1800
+latent_count: 0
+closed_loop_resume: true
+deduplicate_planner_modes: false
+bootstrap_samples: 1000
+reference_samples: 32
+progress_interval_s: 60
+wandb_project: hypodiverse
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.82
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch"

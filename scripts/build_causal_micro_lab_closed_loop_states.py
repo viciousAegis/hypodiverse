@@ -31,9 +31,7 @@ DEFAULT_EXCLUSION_GLOBS = (
 def _visible_key(
     state: EvidenceState,
 ) -> tuple[tuple[int, tuple[int, int, int]], ...]:
-    return tuple(
-        (item.experiment_id, tuple(item.outcome)) for item in state.evidence
-    )
+    return tuple((item.experiment_id, tuple(item.outcome)) for item in state.evidence)
 
 
 def _load_state(path: Path, row: dict[str, Any]) -> EvidenceState:
@@ -98,9 +96,7 @@ def _select_by_separation(
     }
     selected = []
     for bucket, quota in quotas.items():
-        candidates = [
-            state for state in states if state.separation_bucket == bucket
-        ]
+        candidates = [state for state in states if state.separation_bucket == bucket]
         rng.shuffle(candidates)
         if len(candidates) < quota:
             raise RuntimeError(
@@ -116,6 +112,25 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def verify_frozen_states(output_dir: Path) -> None:
+    """Verify the frozen closed-loop worlds against their checked-in manifest."""
+    states_path = output_dir / "states.jsonl"
+    manifest_path = output_dir / "manifest.json"
+    if not states_path.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"missing frozen closed-loop files under {output_dir}; restore them "
+            "from the HypoDiverse repository"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = str(manifest["files"]["states.jsonl"])
+    actual = _sha256(states_path)
+    if actual != expected:
+        raise RuntimeError(
+            f"closed-loop states hash mismatch: expected {expected}, got {actual}"
+        )
+    print(f"verified {states_path}: {actual}")
 
 
 def build_states(
@@ -216,9 +231,7 @@ def build_states(
             for mode_count in initial_mode_counts
         },
         "counts_by_separation": {
-            bucket: sum(
-                state.separation_bucket == bucket for state in all_states
-            )
+            bucket: sum(state.separation_bucket == bucket for state in all_states)
             for bucket in ("low", "medium", "high")
         },
         "files": {"states.jsonl": _sha256(states_path)},
@@ -248,13 +261,15 @@ def main() -> None:
     parser.add_argument("--candidate-multiplier", type=int, default=2)
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--exclude", action="append", default=[])
+    parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
+    if args.verify_only:
+        verify_frozen_states(Path(args.output_dir))
+        return
     manifest = build_states(
         output_dir=Path(args.output_dir),
         initial_mode_counts=tuple(
-            int(item)
-            for item in args.initial_mode_counts.split(",")
-            if item.strip()
+            int(item) for item in args.initial_mode_counts.split(",") if item.strip()
         ),
         trajectories_per_count=args.trajectories_per_count,
         split_seed=args.split_seed,

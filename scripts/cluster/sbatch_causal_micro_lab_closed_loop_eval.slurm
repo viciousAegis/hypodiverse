@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J cml-closed-loop
+#SBATCH -J hypodiverse-loop
 #SBATCH -A MLMI-as3727-SL2-GPU
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
@@ -13,42 +13,37 @@
 #SBATCH -p ampere
 
 set -euo pipefail
-set -x
 
-usage() {
-  cat <<'EOF'
-Usage:
-  sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm \
-    [TRAINING_RUN_OR_MODEL] [RUN_NAME] [extra evaluator arguments...]
-
-Examples:
-  # Resolve the latest complete checkpoint and merge it only if necessary.
-  sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm \
-    causal_micro_lab_cluster_validity_grpo_r1
-
-  # Evaluate an already merged local Hugging Face model.
-  sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm \
-    /path/to/merged_hf closed_loop_validity_grpo
-
-  # With no model argument, use model_id from the evaluation YAML.
-  sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm
-EOF
-}
-
-if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  usage
-  exit 0
+if [[ "$#" -ne 1 ]]; then
+  echo "Usage: sbatch $0 {base|grpo|lifpo}" >&2
+  exit 2
 fi
 
-MODEL_SOURCE="${1:-}"
-if [[ -n "$MODEL_SOURCE" ]]; then
-  shift
-fi
-REQUESTED_RUN_NAME=""
-if [[ -n "${1:-}" && "${1:-}" != --* ]]; then
-  REQUESTED_RUN_NAME="$1"
-  shift
-fi
+METHOD="$1"
+case "$METHOD" in
+  base)
+    export MODEL_ID="Qwen/Qwen3-4B"
+    export MODEL_BASENAME="Qwen3-4B"
+    export RUN_NAME="hypodiverse_closed_loop_base"
+    export LATENT_COUNT=0
+    ;;
+  grpo)
+    export MODEL_ID="viciousa3gis/hypodiverse-grpo"
+    export MODEL_BASENAME="hypodiverse-grpo"
+    export RUN_NAME="hypodiverse_closed_loop_grpo"
+    export LATENT_COUNT=0
+    ;;
+  lifpo)
+    export MODEL_ID="viciousa3gis/hypodiverse-lifpo"
+    export MODEL_BASENAME="hypodiverse-lifpo"
+    export RUN_NAME="hypodiverse_closed_loop_lifpo"
+    export LATENT_COUNT=8
+    ;;
+  *)
+    echo "METHOD must be base, grpo, or lifpo; got: $METHOD" >&2
+    exit 2
+    ;;
+esac
 
 . /etc/profile.d/modules.sh
 module purge
@@ -56,23 +51,19 @@ module load rhel8/default-amp
 module load gcc/11
 module load cuda/12.1
 
-SBATCH_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BOOTSTRAP_REPO_DIR="${REPO_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$SBATCH_SCRIPT_DIR/../.." && pwd)}}"
-cd "$BOOTSTRAP_REPO_DIR"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="${REPO_DIR:-${SLURM_SUBMIT_DIR:-$(cd "$SCRIPT_DIR/../.." && pwd)}}"
+cd "$REPO_DIR"
 mkdir -p logs
 
 set +x
 # shellcheck disable=SC1091
 source scripts/env.sh
 set -x
-cd "$REPO_DIR"
 
-export CUDA_HOME="${CLUSTER_CUDA_HOME:-/usr/local/software/cuda/12.1}"
-export CUDA_PATH="$CUDA_HOME"
-export PATH="${LOCAL_BIN_DIR:-$HOME/.local/bin}:$CUDA_HOME/bin:$PATH"
-GCC_LIBSTDCPP_DIR="$(dirname "$(g++ -print-file-name=libstdc++.so.6)")"
-export LD_LIBRARY_PATH="$GCC_LIBSTDCPP_DIR:$CUDA_HOME/lib64:${LD_LIBRARY_PATH:-}"
-unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH CUDA_INC_PATH
+export EVAL_CONFIG="configs/verl/eval/hypodiverse_closed_loop.yaml"
+export SGLANG_PORT="${SGLANG_PORT:-$((20000 + SLURM_JOB_ID % 20000))}"
+export PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 bash scripts/cluster/bootstrap_python_env.sh
 # shellcheck disable=SC1091
@@ -80,91 +71,4 @@ source "$VENV_DIR/bin/activate"
 # shellcheck disable=SC1091
 source scripts/cluster/prepend_venv_cuda_libs.sh
 
-MODEL_LABEL=""
-if [[ -n "$MODEL_SOURCE" ]]; then
-  RUN_ROOT="$CHECKPOINT_ROOT/scattered-discovery/$MODEL_SOURCE"
-  if [[ -d "$RUN_ROOT" ]]; then
-    TRAINING_RUN="$MODEL_SOURCE"
-    STEP=""
-    TRACKER="$RUN_ROOT/latest_checkpointed_iteration.txt"
-    if [[ -f "$TRACKER" ]]; then
-      TRACKED_STEP="$(tr -d '[:space:]' < "$TRACKER")"
-      if [[ "$TRACKED_STEP" =~ ^[0-9]+$ ]]; then
-        TRACKED_ACTOR="$RUN_ROOT/global_step_$TRACKED_STEP/actor"
-        if compgen -G "$TRACKED_ACTOR/model_world_size_*_rank_*.pt" >/dev/null; then
-          STEP="$TRACKED_STEP"
-        fi
-      fi
-    fi
-
-    if [[ -z "$STEP" ]]; then
-      while IFS= read -r candidate; do
-        actor_dir="$candidate/actor"
-        if compgen -G "$actor_dir/model_world_size_*_rank_*.pt" >/dev/null; then
-          STEP="${candidate##*/global_step_}"
-          break
-        fi
-      done < <(
-        find "$RUN_ROOT" -maxdepth 1 -type d -name 'global_step_*' -print \
-          | sort -Vr
-      )
-    fi
-
-    if [[ -z "$STEP" ]]; then
-      echo "No complete actor checkpoint found under: $RUN_ROOT" >&2
-      exit 1
-    fi
-
-    ACTOR_DIR="$RUN_ROOT/global_step_$STEP/actor"
-    if [[ ! -f "$ACTOR_DIR/huggingface/config.json" ]]; then
-      echo "Checkpoint lacks Hugging Face metadata: $ACTOR_DIR/huggingface/config.json" >&2
-      exit 1
-    fi
-
-    MODEL_PATH="$MODEL_ROOT/eval_checkpoints/${TRAINING_RUN}_global_step_${STEP}_hf"
-    if [[ ! -f "$MODEL_PATH/config.json" ]] || {
-      [[ ! -f "$MODEL_PATH/model.safetensors" ]] &&
-        [[ ! -f "$MODEL_PATH/model.safetensors.index.json" ]]
-    }; then
-      mkdir -p "$(dirname "$MODEL_PATH")"
-      python -m verl.model_merger merge \
-        --backend fsdp \
-        --local_dir "$ACTOR_DIR" \
-        --target_dir "$MODEL_PATH"
-    else
-      echo "Reusing merged model: $MODEL_PATH"
-    fi
-    export MODEL_PATH
-    export DOWNLOAD_MODEL=0
-    MODEL_LABEL="${TRAINING_RUN}_global_step_${STEP}"
-  elif [[ -f "$MODEL_SOURCE/config.json" ]]; then
-    export MODEL_PATH="$MODEL_SOURCE"
-    export DOWNLOAD_MODEL=0
-    MODEL_LABEL="$(basename "$MODEL_SOURCE")"
-  else
-    unset MODEL_PATH
-    export MODEL_ID="$MODEL_SOURCE"
-    export DOWNLOAD_MODEL=1
-    MODEL_LABEL="${MODEL_SOURCE##*/}"
-  fi
-fi
-
-if [[ -n "$REQUESTED_RUN_NAME" ]]; then
-  export RUN_NAME="$REQUESTED_RUN_NAME"
-elif [[ -n "$MODEL_LABEL" ]]; then
-  SAFE_MODEL_LABEL="${MODEL_LABEL//[^A-Za-z0-9_.-]/_}"
-  export RUN_NAME="causal_micro_lab_closed_loop_k8_${SAFE_MODEL_LABEL}"
-fi
-
-export EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_closed_loop_k8_base.yaml}"
-export PYTHON_BIN="${PYTHON_BIN:-python3}"
-export SGLANG_PORT="${SGLANG_PORT:-$((20000 + SLURM_JOB_ID % 20000))}"
-
-echo "Model source: ${MODEL_SOURCE:-evaluation YAML}"
-if [[ -n "${TRAINING_RUN:-}" ]]; then
-  echo "Checkpoint:   global_step_$STEP"
-fi
-echo "Resolved model: ${MODEL_PATH:-${MODEL_ID:-evaluation YAML}}"
-echo "W&B run: ${RUN_NAME:-evaluation YAML default}"
-
-scripts/cluster/run_causal_micro_lab_closed_loop_eval.sh "$@"
+exec bash scripts/cluster/run_causal_micro_lab_closed_loop_eval.sh

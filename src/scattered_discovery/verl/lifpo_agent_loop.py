@@ -1,27 +1,31 @@
-"""Canonical LIFPO agent-loop registration."""
+"""Single-shot LIFPO rollout with a stable veRL metadata contract."""
 
 from __future__ import annotations
 
-from scattered_discovery.verl.agent_loop import register
-from scattered_discovery.verl.latent_agent_loop import (
-    LATENT_REWARD_EXTRA_DEFAULTS,
-    LatentGRPOAgentLoop,
-    normalize_latent_reward_extra_info,
-)
+from typing import Any
 
-
-LIFPO_REWARD_EXTRA_DEFAULTS = LATENT_REWARD_EXTRA_DEFAULTS
-
-
-def normalize_lifpo_reward_extra_info(
-    value: object,
-    *,
-    reward_score: object = 0.0,
-) -> dict[str, float]:
-    """Return the fixed scalar schema expected by LIFPO batch assembly."""
-    return normalize_latent_reward_extra_info(value, reward_score=reward_score)
+from scattered_discovery.verl.agent_loop import VerifiableHypothesisAgentLoop, register
+from scattered_discovery.verl.lifpo_trainer import normalize_lifpo_reward_extra_info
 
 
 @register("lifpo_agent_loop")
-class LIFPOAgentLoop(LatentGRPOAgentLoop):  # type: ignore[misc]
-    """LIFPO rollout loop; behavior is identical to the evaluated checkpoint."""
+class LIFPOAgentLoop(VerifiableHypothesisAgentLoop):  # type: ignore[misc]
+    """Generate one latent-conditioned hypothesis and attach LIFPO metadata."""
+
+    async def run(self, sampling_params: dict[str, Any], **kwargs: Any) -> Any:
+        output = await super().run(sampling_params, **kwargs)
+        reward_extra_info = output.extra_fields.get("reward_extra_info", {})
+        for key in (
+            "reward_payload",
+            "eval_payload",
+            "reward_payload_json",
+            "eval_payload_json",
+        ):
+            reward_extra_info.pop(key, None)
+            output.extra_fields.pop(key, None)
+        output.extra_fields["reward_extra_info"] = normalize_lifpo_reward_extra_info(
+            reward_extra_info,
+            reward_score=output.reward_score,
+        )
+        output.extra_fields.update(output.extra_fields["reward_extra_info"])
+        return output

@@ -24,7 +24,7 @@ if [[ -n "${CUDA_HOME:-}" ]]; then
   export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 fi
 
-EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_test_k4.yaml}"
+EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/hypodiverse_base.yaml}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN=python

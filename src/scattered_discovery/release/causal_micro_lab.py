@@ -25,15 +25,16 @@ SCHEMA_VERSION = 1
 BASE_MODEL = "Qwen/Qwen3-4B"
 DEFAULT_TRAIN_FILE = Path("data/causal_micro_lab/trainable/verl_train.jsonl")
 DEFAULT_VALIDATION_FILE = Path("data/causal_micro_lab/trainable/verl_val.jsonl")
-DEFAULT_TEST_FILE = Path("eval_sets/causal_micro_lab/final_v3/verl_test.jsonl")
+DEFAULT_TEST_FILE = Path("eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl")
 DEFAULT_DATASET_OUTPUT = Path("artifacts/hf_release/hypodiverse")
 DEFAULT_MODEL_OUTPUT_ROOT = Path("artifacts/hf_release/models")
 
 DATASET_PROVENANCE_CONFIGS = (
-    Path("configs/verl/runs/causal_micro_lab_cluster_validity_grpo.yaml"),
+    Path("configs/verl/runs/causal_micro_lab_cluster_grpo.yaml"),
     Path("configs/verl/runs/causal_micro_lab_cluster_lifpo.yaml"),
-    Path("configs/verl/eval/causal_micro_lab_final_k16_base_v3.yaml"),
-    Path("configs/verl/eval/causal_micro_lab_final_k16_lifpo_v3.yaml"),
+    Path("configs/verl/eval/hypodiverse_base.yaml"),
+    Path("configs/verl/eval/hypodiverse_grpo.yaml"),
+    Path("configs/verl/eval/hypodiverse_lifpo.yaml"),
 )
 
 
@@ -41,7 +42,7 @@ DATASET_PROVENANCE_CONFIGS = (
 class ModelSpec:
     method: str
     display_name: str
-    historical_run: str
+    release_directory: str
     checkpoint_step: int
     training_config: Path
     evaluation_config: Path
@@ -49,32 +50,26 @@ class ModelSpec:
 
     @property
     def merged_directory_name(self) -> str:
-        return f"{self.historical_run}_global_step_{self.checkpoint_step}_hf"
+        return self.release_directory
 
 
 EXACT_MODEL_SPECS: Mapping[str, ModelSpec] = {
     "grpo": ModelSpec(
         method="grpo",
         display_name="GRPO",
-        historical_run="causal_micro_lab_cluster_validity_grpo_r1",
+        release_directory="hypodiverse-grpo-step-90",
         checkpoint_step=90,
-        training_config=Path(
-            "configs/verl/runs/causal_micro_lab_cluster_validity_grpo.yaml"
-        ),
-        evaluation_config=Path(
-            "configs/verl/eval/causal_micro_lab_final_k16_base_v3.yaml"
-        ),
+        training_config=Path("configs/verl/runs/causal_micro_lab_cluster_grpo.yaml"),
+        evaluation_config=Path("configs/verl/eval/hypodiverse_grpo.yaml"),
         evaluation_protocol="standard",
     ),
     "lifpo": ModelSpec(
         method="lifpo",
         display_name="LIFPO",
-        historical_run=("causal_micro_lab_cluster_latent_ips_grpo_v2_fulltraj_k8_r1"),
+        release_directory="hypodiverse-lifpo-step-55",
         checkpoint_step=55,
         training_config=Path("configs/verl/runs/causal_micro_lab_cluster_lifpo.yaml"),
-        evaluation_config=Path(
-            "configs/verl/eval/causal_micro_lab_final_k16_lifpo_v3.yaml"
-        ),
+        evaluation_config=Path("configs/verl/eval/hypodiverse_lifpo.yaml"),
         evaluation_protocol="latent-conditioned generation (8 latent identities)",
     ),
 }
@@ -368,7 +363,7 @@ never regenerates examples during publishing.
 |---|---:|---|
 | train | {counts["train"]} | Exact `verl_train.jsonl` used by GRPO and LIFPO |
 | validation | {counts["validation"]} | Exact `verl_val.jsonl` used during training |
-| test | {counts["test"]} | Frozen `final_v3/verl_test.jsonl` evaluation set |
+| test | {counts["test"]} | Frozen canonical evaluation set |
 
 The files under `data/` can be loaded with `datasets.load_dataset("json",
 data_files=...)`. Each row retains the veRL-compatible prompt, environment
@@ -657,11 +652,6 @@ def build_model_release(
     spec = EXACT_MODEL_SPECS[method]
     root = Path(repo_root).expanduser().resolve()
     model_path = _path_from_root(root, model_dir)
-    if model_path.name != spec.merged_directory_name:
-        raise ReleaseError(
-            f"{spec.display_name} must use the exact evaluated merged directory "
-            f"named {spec.merged_directory_name}"
-        )
     metadata_output = _path_from_root(
         root,
         output_dir or (DEFAULT_MODEL_OUTPUT_ROOT / method),
@@ -1034,13 +1024,11 @@ def _public_result(value: Any) -> Any:
 def _public_error(message: str) -> str:
     for spec in EXACT_MODEL_SPECS.values():
         message = message.replace(
-            spec.historical_run, f"{spec.display_name}-checkpoint"
+            spec.release_directory, f"{spec.display_name}-checkpoint"
         )
         message = message.replace(
             spec.training_config.name, f"{spec.method}-training-config"
         )
-    message = message.replace("latent_ips_grpo", "lifpo")
-    message = message.replace("ips_grpo", "lifpo")
     return message
 
 

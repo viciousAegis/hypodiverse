@@ -79,15 +79,15 @@ def main() -> None:
             )
         ],
         epsilon=float(config["lifpo_frequency_epsilon"]),
-        mi_alpha=alpha,
-        mi_clip=clip,
-        use_ips=bool(config["lifpo_inverse_frequency_enabled"]),
+        counterfactual_alpha=alpha,
+        counterfactual_clip=clip,
+        inverse_frequency_enabled=bool(config["lifpo_inverse_frequency_enabled"]),
         latent_count=4,
-        ips_reward_mode=str(config["lifpo_frequency_credit_mode"]),
-        ips_bonus_max=frequency_credit,
-        mi_token_scope=str(config["lifpo_counterfactual_token_scope"]),
-        mi_reduction=str(config["lifpo_counterfactual_reduction"]),
-        mi_valid_only=bool(config["lifpo_counterfactual_valid_only"]),
+        frequency_credit_mode=str(config["lifpo_frequency_credit_mode"]),
+        frequency_credit_max=frequency_credit,
+        counterfactual_token_scope=str(config["lifpo_counterfactual_token_scope"]),
+        counterfactual_reduction=str(config["lifpo_counterfactual_reduction"]),
+        counterfactual_valid_only=bool(config["lifpo_counterfactual_valid_only"]),
     )
     assert torch.isfinite(advantages).all()
     assert metrics["lifpo/validity_rate"] == 0.5

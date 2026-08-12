@@ -45,8 +45,8 @@ source "$VENV_DIR/bin/activate"
 # shellcheck disable=SC1091
 source scripts/cluster/prepend_venv_cuda_libs.sh
 
-export EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_test_k4.yaml}"
+export EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/hypodiverse_base.yaml}"
 export PYTHON_BIN="${PYTHON_BIN:-python3}"
-export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
+export WANDB_PROJECT="${WANDB_PROJECT:-hypodiverse}"
 
 scripts/cluster/run_causal_micro_lab_eval_openai.sh "$@"

@@ -14,7 +14,9 @@ release, and the final code tag must describe the already-published artifacts.
 
 ### Data
 
-The exact training inputs used by GRPO and LIFPO are:
+Training, validation, and offline-evaluation rows are not duplicated in Git.
+The exact inputs used by GRPO and LIFPO are downloaded from the immutable
+Hugging Face dataset revision and materialized at:
 
 ```text
 data/causal_micro_lab/trainable/verl_train.jsonl
@@ -31,10 +33,10 @@ does not regenerate them. Their expected row counts and SHA256 hashes are:
 | validation | 128 | `5865f9d985becd6d33cdbbe62090c8baac450282716760c838ba40064d0d5e6f` |
 | test | 192 | `4e6ee134a105276b91ebdedab55afe3f5af53689f7c3f666b037cfa0aae36967` |
 
-The frozen evaluation input is:
+The frozen evaluation input is materialized at:
 
 ```text
-eval_sets/causal_micro_lab/final_v3/verl_test.jsonl
+eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl
 ```
 
 It contains 192 states: 48 each with compatible-hypothesis count
@@ -43,6 +45,12 @@ It contains 192 states: 48 each with compatible-hypothesis count
 ```text
 4e6ee134a105276b91ebdedab55afe3f5af53689f7c3f666b037cfa0aae36967
 ```
+
+The separate 128-world closed-loop state set is version-controlled at
+`eval_sets/causal_micro_lab/closed_loop_v1/`. Its manifest records the exact
+state-file digest. This is deliberate: its original selection excluded local
+historical datasets that are not in the release, so regenerating it in a clean
+checkout would not recover the evaluated worlds.
 
 ### Evaluated models
 
@@ -54,10 +62,9 @@ The thesis compares three model conditions:
 | GRPO | Frozen actor checkpoint at `global_step_90` |
 | LIFPO | Frozen actor checkpoint at `global_step_55` |
 
-The publisher resolves the exact GRPO and LIFPO source artifacts from its
-release registry. Internal source identifiers are recorded only in the
-machine-readable release manifest so that public documentation and commands use
-the final method names consistently.
+The publisher resolves the exact GRPO and LIFPO source artifacts from canonical
+release directories. The release manifest records their checkpoint steps and
+per-file hashes.
 
 The evaluated step-90 and step-55 models are distinct from the canonical
 100-update reproduction configurations. A 100-update reproduction run is the
@@ -103,7 +110,7 @@ data/
   test.jsonl
 source/
   trainable/                 # exact cluster source files and manifests
-  final_v3/                  # states.jsonl, manifest.json, and source eval row
+  final_v3/                  # frozen source files in the published revision
 configs/
   training/
   evaluation/
@@ -126,18 +133,17 @@ configuration, model card, and a release manifest. Its model card records:
 - hashes of all merged model files;
 - the frozen evaluation protocol above.
 
-The machine-readable manifest additionally records the internal source artifact
-identifier and actor path needed to audit the release.
+The machine-readable manifest additionally records the checkpoint step and
+source configuration hashes needed to audit the release.
 
 ## Ordered release procedure
 
-Run dataset commands from any checkout containing the frozen splits. Run model
-commands on the cluster checkout containing the merged evaluated checkpoints.
-In either environment, load the project environment and authenticate to the Hub
-without printing the token.
+Run model commands on the cluster checkout containing the merged evaluated
+checkpoints. Load the project environment and authenticate to the Hub without
+printing the token.
 
 ```bash
-cd /path/to/open-discovery
+cd /path/to/hypodiverse
 source scripts/env.sh
 source .venv/bin/activate
 export HF_NAMESPACE="viciousa3gis"
@@ -145,19 +151,26 @@ export HF_NAMESPACE="viciousa3gis"
 
 ### 1. Confirm the exact source files
 
+Download and verify the immutable splits. This command checks each SHA256
+digest before placing the file at its canonical local path:
+
+```bash
+hypodiverse-download-data
+```
+
 ```bash
 test -f data/causal_micro_lab/trainable/verl_train.jsonl
 test -f data/causal_micro_lab/trainable/verl_val.jsonl
-test -f eval_sets/causal_micro_lab/final_v3/verl_test.jsonl
+test -f eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl
 
 sha256sum \
   data/causal_micro_lab/trainable/verl_train.jsonl \
   data/causal_micro_lab/trainable/verl_val.jsonl \
-  eval_sets/causal_micro_lab/final_v3/verl_test.jsonl
+  eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl
 ```
 
-The final line must contain the frozen evaluation digest stated above. Stop if
-any source file is absent; do not invoke dataset generation as a fallback.
+The final line must contain the frozen evaluation digest stated above. Do not
+invoke dataset generation as a fallback.
 
 ### 2. Package and publish the dataset
 
@@ -167,7 +180,7 @@ First build and verify a local staging tree:
 python -m scattered_discovery.release.causal_micro_lab dataset \
   --train-file data/causal_micro_lab/trainable/verl_train.jsonl \
   --validation-file data/causal_micro_lab/trainable/verl_val.jsonl \
-  --test-file eval_sets/causal_micro_lab/final_v3/verl_test.jsonl \
+  --test-file eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl \
   --output-dir artifacts/hf_release/hypodiverse \
   --repo-id "$HF_NAMESPACE/hypodiverse"
 ```
@@ -178,7 +191,7 @@ After inspecting `release_manifest.json`, publish the same staging tree:
 python -m scattered_discovery.release.causal_micro_lab dataset \
   --train-file data/causal_micro_lab/trainable/verl_train.jsonl \
   --validation-file data/causal_micro_lab/trainable/verl_val.jsonl \
-  --test-file eval_sets/causal_micro_lab/final_v3/verl_test.jsonl \
+  --test-file eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl \
   --output-dir artifacts/hf_release/hypodiverse \
   --repo-id "$HF_NAMESPACE/hypodiverse" \
   --push
@@ -196,21 +209,26 @@ bash scripts/cluster/publish_causal_micro_lab_hf.sh \
 
 ### 3. Locate or merge the evaluated checkpoints
 
-The publisher expects the already-merged GRPO and LIFPO directories below
-`$MODEL_ROOT/eval_checkpoints`. The exact evaluated source checkpoints are
-GRPO step 90 and LIFPO step 55. Merge a missing directory with veRL's standard
-merger:
+The publisher expects canonical merged GRPO and LIFPO directories below
+`$MODEL_ROOT/eval_checkpoints`. The exact evaluated source checkpoints are GRPO
+step 90 and LIFPO step 55. Point `GRPO_ACTOR_DIR` and `LIFPO_ACTOR_DIR` at those
+FSDP actor directories, then merge them with veRL's standard merger:
 
 ```bash
 python -m verl.model_merger merge \
   --backend fsdp \
-  --local_dir "$CHECKPOINT_ROOT/scattered-discovery/TRAINING_RUN/global_step_STEP/actor" \
-  --target_dir "$MODEL_ROOT/eval_checkpoints/TRAINING_RUN_global_step_STEP_hf"
+  --local_dir "$GRPO_ACTOR_DIR" \
+  --target_dir "$MODEL_ROOT/eval_checkpoints/hypodiverse-grpo-step-90"
+
+python -m verl.model_merger merge \
+  --backend fsdp \
+  --local_dir "$LIFPO_ACTOR_DIR" \
+  --target_dir "$MODEL_ROOT/eval_checkpoints/hypodiverse-lifpo-step-55"
 ```
 
-Use the exact run directories already recorded by the completed cluster jobs.
-The release registry pins GRPO to step 90 and LIFPO to step 55 and validates
-the merged directory name before upload.
+The release registry pins GRPO to step 90 and LIFPO to step 55. Explicit
+`--model-dir` arguments are accepted so the frozen merged checkpoints do not
+need to be renamed before packaging.
 
 ### 4. Publish the evaluated models
 
@@ -256,18 +274,22 @@ bash scripts/cluster/publish_causal_micro_lab_hf.sh \
   --push
 ```
 
-### 5. Clean public naming and tag the code
+### 5. Evaluate the released models
+
+The released-model launcher downloads the base, GRPO, and LIFPO repositories
+and evaluates all three with the frozen protocol:
+
+```bash
+bash scripts/cluster/submit_hypodiverse_evals.sh
+```
+
+### 6. Tag the code
 
 Only after the data and model repositories are immutable:
 
-1. use `LIFPO` in the README, thesis-facing configuration, launchers, plots,
-   model cards, and examples;
-2. retain legacy source identifiers only inside compatibility code and
-   machine-readable release manifests;
-3. retain internal aliases where existing artifacts rely on them;
-4. record the three Hub repository revisions in the root README;
-5. run the test and smoke-evaluation suite;
-6. create the final public Git tag and release from the tested commit.
+1. record the three Hub repository revisions in the root README;
+2. run the test and smoke-evaluation suite;
+3. create the final public Git tag and release from the tested commit.
 
 This keeps public terminology consistent without breaking frozen checkpoints or
 obscuring which source artifact generated each released model.
@@ -316,7 +338,6 @@ PY
 ### Code release
 
 - [ ] Public prose and current launchers say LIFPO.
-- [ ] Legacy identifiers remain internal and resolvable for frozen artifacts.
 - [ ] Canonical GRPO and LIFPO reproduction configs each specify 100 updates.
 - [ ] The exact evaluated step-90 and step-55 artifacts are not described as
       update-100 checkpoints.

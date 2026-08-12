@@ -225,22 +225,6 @@ if [[ -n "${TRAINER_USE_V1:-}" ]]; then
   TRAINER+=(trainer.use_v1="${TRAINER_USE_V1}")
 fi
 
-CD_GRPO=()
-if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
-  CD_GRPO=(
-    +actor_rollout_ref.rollout.agent.agent_loop_manager_class=scattered_discovery.verl.cd_grpo_trainer.CDGRPOAgentLoopManagerTQ
-    +algorithm.cd_grpo.variant="${CD_GRPO_VARIANT:-logdet}"
-    +algorithm.cd_grpo.archive="${CD_GRPO_ARCHIVE:-true}"
-    +algorithm.cd_grpo.beta="${CD_GRPO_BETA:-0.3}"
-    +algorithm.cd_grpo.beta_guard="${CD_GRPO_BETA_GUARD:-true}"
-    +algorithm.cd_grpo.beta_guard_window="${CD_GRPO_BETA_GUARD_WINDOW:-50}"
-    +algorithm.cd_grpo.ell="${CD_GRPO_ELL:-0.25}"
-    +algorithm.cd_grpo.gamma="${CD_GRPO_GAMMA:-0.7}"
-    +algorithm.cd_grpo.probe_fraction="${CD_GRPO_PROBE_FRACTION:-1.0}"
-    +algorithm.cd_grpo.length_penalty_start="${CD_GRPO_LENGTH_PENALTY_START:-3072}"
-  )
-fi
-
 LIFPO=()
 if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.lifpo_main" ]]; then
   LIFPO=(
@@ -262,27 +246,6 @@ if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.lifpo_main" ]]; then
   )
 fi
 
-IPS_GRPO=()
-if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.ips_grpo_main" ]]; then
-  IPS_GRPO=(
-    +actor_rollout_ref.rollout.agent.agent_loop_manager_class=scattered_discovery.verl.ips_grpo_trainer.IPSGRPOAgentLoopManager
-    +algorithm.ips_grpo.epsilon="${IPS_GRPO_EPSILON:-0.2}"
-    +algorithm.ips_grpo.probe_fraction="${IPS_GRPO_PROBE_FRACTION:-1.0}"
-    +algorithm.ips_grpo.length_penalty_start="${IPS_GRPO_LENGTH_PENALTY_START:-3072}"
-    +algorithm.ips_grpo.latent_enabled="${IPS_GRPO_LATENT_ENABLED:-false}"
-    +algorithm.ips_grpo.latent_count="${IPS_GRPO_LATENT_COUNT:-8}"
-    +algorithm.ips_grpo.latent_negative_offset="${IPS_GRPO_LATENT_NEGATIVE_OFFSET:-1}"
-    +algorithm.ips_grpo.latent_mi_alpha="${IPS_GRPO_LATENT_MI_ALPHA:-0.1}"
-    +algorithm.ips_grpo.latent_mi_clip="${IPS_GRPO_LATENT_MI_CLIP:-1.0}"
-    +algorithm.ips_grpo.latent_mi_token_scope="${IPS_GRPO_LATENT_MI_TOKEN_SCOPE:-answer}"
-    +algorithm.ips_grpo.latent_mi_reduction="${IPS_GRPO_LATENT_MI_REDUCTION:-mean}"
-    +algorithm.ips_grpo.latent_mi_valid_only="${IPS_GRPO_LATENT_MI_VALID_ONLY:-true}"
-    +algorithm.ips_grpo.latent_use_ips="${IPS_GRPO_LATENT_USE_IPS:-true}"
-    +algorithm.ips_grpo.latent_ips_reward_mode="${IPS_GRPO_LATENT_IPS_REWARD_MODE:-replace}"
-    +algorithm.ips_grpo.latent_ips_bonus_max="${IPS_GRPO_LATENT_IPS_BONUS_MAX:-0.25}"
-  )
-fi
-
 if [[ -n "$RESUME_FROM_PATH" ]]; then
   TRAINER+=(trainer.resume_from_path="${RESUME_FROM_PATH}")
 fi
@@ -294,7 +257,5 @@ fi
   "${ROLLOUT[@]}" \
   "${REF[@]}" \
   "${TRAINER[@]}" \
-  "${CD_GRPO[@]}" \
   "${LIFPO[@]}" \
-  "${IPS_GRPO[@]}" \
   "$@"

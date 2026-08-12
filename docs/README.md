@@ -1,6 +1,7 @@
-# Scattered Discovery Docs
+# HypoDiverse Documentation
 
-Start here when setting up, generating datasets, running local smoke tests, or launching veRL training.
+Start here when setting up HypoDiverse, inspecting the benchmark, or launching
+the frozen GRPO and LIFPO workflows.
 
 For the config directory layout itself, see [../configs/README.md](../configs/README.md).
 
@@ -25,10 +26,7 @@ For the config directory layout itself, see [../configs/README.md](../configs/RE
 
 ```bash
 UV_CACHE_DIR=.uv-cache uv sync --extra verl
-sbatch scripts/cluster/sbatch_verl_smoke_grpo.slurm
-sbatch scripts/cluster/sbatch_verl_pilot_grpo.slurm
+sbatch scripts/cluster/sbatch_causal_micro_lab_grpo.slurm
+sbatch scripts/cluster/sbatch_causal_micro_lab_lifpo.slurm
+bash scripts/cluster/submit_hypodiverse_evals.sh
 ```
-
-Use `configs/verl/datasets/all_envs.yaml` as the main cluster-facing control surface.
-Use `configs/verl/datasets/scattered_smoke.yaml` and `configs/verl/datasets/scattered_pilot.yaml`
-for the canned scattered-causal cluster runs.

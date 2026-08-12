@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.8"
+          enable-cache: true
+      - name: Install CPU development environment
+        run: uv sync --frozen
+      - name: Lint
+        run: uvx ruff@0.14.5 check src tests scripts
+      - name: Test
+        run: uv run python -m unittest discover -s tests
+      - name: Verify release CLI
+        run: uv run python -m scattered_discovery.release.causal_micro_lab --help

@@ -10,9 +10,17 @@ from scattered_discovery.envs.causal_micro_lab.closed_loop import (
     select_initial_states,
     summarize_trajectories,
 )
+from scattered_discovery.envs.causal_micro_lab.closed_loop_preflight import (
+    greedy_representative_modes,
+    representative_coverage_score,
+    run_reference_trajectory,
+)
 from scattered_discovery.envs.causal_micro_lab.planner import (
     oracle_disagreement_experiment,
     prediction_distributions,
+)
+from scattered_discovery.envs.causal_micro_lab.predictive_diversity import (
+    RepresentativeCoverageMatrix,
 )
 from scattered_discovery.envs.causal_micro_lab.prompt_builder import build_prompt
 from scattered_discovery.envs.causal_micro_lab.signatures import build_mode_table
@@ -120,9 +128,7 @@ class CausalMicroLabClosedLoopTests(unittest.TestCase):
                         self.state,
                         state_id=f"{mode_count}-{bucket}",
                         hidden_mode_id=modes.pop(),
-                        valid_mode_ids=tuple(
-                            list(self.table.modes_by_id)[:mode_count]
-                        ),
+                        valid_mode_ids=tuple(list(self.table.modes_by_id)[:mode_count]),
                         separation_bucket=bucket,
                     )
                 )
@@ -202,6 +208,48 @@ class CausalMicroLabClosedLoopTests(unittest.TestCase):
         )
         self.assertEqual(summary["mean_experiments_used"], 1.0)
         self.assertEqual(summary["identifications_per_100_experiments"], 100.0)
+
+    def test_greedy_representatives_improve_on_their_first_medoid(self):
+        representatives = greedy_representative_modes(
+            self.state,
+            2,
+            mode_table=self.table,
+        )
+        self.assertEqual(len(representatives), 2)
+        self.assertEqual(len(set(representatives)), 2)
+        one_score = representative_coverage_score(
+            self.state,
+            representatives[:1],
+            mode_table=self.table,
+        )
+        two_score = representative_coverage_score(
+            self.state,
+            representatives,
+            mode_table=self.table,
+        )
+        self.assertGreaterEqual(two_score, one_score)
+        matrix = RepresentativeCoverageMatrix(
+            self.state.valid_mode_ids,
+            self.state.observed_experiment_ids(),
+            mode_table=self.table,
+        )
+        self.assertAlmostEqual(
+            two_score,
+            1.0 - matrix.representation_error(representatives),
+        )
+
+    def test_collapsed_reference_uses_random_fallback(self):
+        trace = run_reference_trajectory(
+            self.state,
+            policy="collapsed",
+            k=4,
+            max_steps=1,
+            seed=3,
+            mode_table=self.table,
+        )
+        self.assertEqual(len(trace.steps), 1)
+        self.assertEqual(trace.steps[0]["bank_unique_modes"], 1)
+        self.assertEqual(trace.steps[0]["selection_reason"], "seeded_random")
 
 
 if __name__ == "__main__":

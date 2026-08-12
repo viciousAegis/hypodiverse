@@ -1,6 +1,7 @@
-# Canonical public LIFPO training configuration.
+# Main validity-only GRPO baseline for one two-GPU Slurm node.
 #
-# LIFPO stands for Latent Inverse Frequency Policy Optimisation.
+# Sixteen prompts x 8 rollouts produces 128 responses per update and preserves
+# the GRPO group size used by the LIFPO comparison.
 
 prepare_datasets: 0
 causal_micro_lab_generate_dataset_if_missing: 0
@@ -15,33 +16,21 @@ causal_micro_lab_val_max_rows: 128
 causal_micro_lab_test_max_rows: 128
 causal_micro_lab_progress_every: 512
 
+# Base reward ladder before overlong shaping:
+#   0.0 = empty or unparseable
+#   0.2 = syntax-valid but evidence-invalid hypothesis
+#   1.0 = evidence-valid hypothesis
 causal_micro_lab_nonempty_output_reward: 0.0
 causal_micro_lab_rule_marker_reward: 0.0
 causal_micro_lab_parse_valid_reward: 0.0
 causal_micro_lab_syntax_valid_reward: 0.2
 causal_micro_lab_evidence_consistent_reward: 0.0
 causal_micro_lab_valid_hypothesis_reward: 1.0
+
+# Match the LIFPO response budget and overlong handling.
 causal_micro_lab_length_penalty_start: 3072
 causal_micro_lab_length_penalty_max: -0.2
 causal_micro_lab_mask_truncated: 1
-
-# LIFPO objective.
-trainer_entrypoint: scattered_discovery.verl.lifpo_main
-trainer_use_v1: true
-lifpo_frequency_epsilon: 0.2
-lifpo_probe_fraction: 1.0
-lifpo_length_penalty_start: 3072
-lifpo_latent_enabled: true
-lifpo_latent_count: 8
-lifpo_negative_offset: 1
-lifpo_counterfactual_alpha: 0.5
-lifpo_counterfactual_clip: 1.0
-lifpo_counterfactual_token_scope: full_response
-lifpo_counterfactual_reduction: sum
-lifpo_counterfactual_valid_only: true
-lifpo_inverse_frequency_enabled: true
-lifpo_frequency_credit_mode: bonus
-lifpo_frequency_credit_max: 0.5
 
 discovery_algo: grpo
 model_id: Qwen/Qwen3-4B
@@ -49,8 +38,7 @@ model_basename: Qwen3-4B
 download_model: 1
 attn_implementation: sdpa
 use_remove_padding: "False"
-agent_loop_config_path: configs/verl/lifpo_agent_loop.yaml
-default_agent_loop: lifpo_agent_loop
+default_agent_loop: causal_micro_lab_agent_loop
 
 train_file: data/causal_micro_lab/trainable/verl_train.jsonl
 val_file: data/causal_micro_lab/trainable/verl_val.jsonl
@@ -73,11 +61,12 @@ temperature: 1.0
 top_p: 1.0
 total_epochs: 1
 total_training_steps: 100
-save_freq: 5
+save_freq: 10
 test_freq: 10
 max_actor_ckpt_to_keep: 1
 max_critic_ckpt_to_keep: 1
 max_prompt_length: 2048
 max_response_length: 6000
 
-experiment_name: hypodiverse_lifpo_r1
+# Stable naming makes an interrupted Slurm job resumable with the same command.
+experiment_name: hypodiverse_grpo_r1

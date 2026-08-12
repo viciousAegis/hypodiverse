@@ -2,12 +2,18 @@
 .uv-cache/
 .uv-tools/
 .ruff_cache/
+.pytest_cache/
+.matplotlib-cache/
+.codex-staging/
 .ollama-home/
 .ollama-models/
 __pycache__/
 *.py[cod]
+*.err
+*.out
 results/
 data/
+eval_sets/
 checkpoints/
 .cache/
 .wandb/
@@ -17,3 +23,22 @@ artifacts/
 logs/*
 !logs/.gitkeep
 outputs/*
+tmp/
+ray-tmp/
+
+# Locally generated thesis drafts and figures. Canonical release figures are
+# added explicitly when required.
+docs/figures/
+docs/related_work_*
+docs/thesis_*
+scripts/*hypothetical*
+scripts/generate_thesis_placeholder_figures.py
+scripts/generate_causal_micro_lab_v3_thesis_figures.py
+scripts/plot_chapter5_grouped_figures.py
+scripts/bootstrap_causal_micro_lab_valid_budget.py
+scripts/plot_causal_micro_lab_best4_of_n.py
+scripts/plot_causal_micro_lab_budget_curves.py
+scripts/plot_causal_micro_lab_diversity_comparison.py
+scripts/plot_causal_micro_lab_environment_intro.py
+scripts/plot_causal_micro_lab_separation_analysis.py
+configs/verl/eval/causal_micro_lab_final_k32_base.yaml

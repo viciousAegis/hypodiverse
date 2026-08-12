@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J cml-lifpo
+#SBATCH -J hypodiverse-lifpo
 #SBATCH -A MLMI-as3727-SL2-GPU
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
@@ -45,6 +45,8 @@ source "$VENV_DIR/bin/activate"
 # shellcheck disable=SC1091
 source scripts/cluster/prepend_venv_cuda_libs.sh
 
+python -m scattered_discovery.release.download
+
 RUN_CONFIG_PATH="configs/verl/runs/causal_micro_lab_cluster_lifpo.yaml"
 python scripts/cluster/check_lifpo.py --run-config "$RUN_CONFIG_PATH"
 
@@ -53,7 +55,7 @@ if [[ -z "${WANDB_API_KEY:-}" ]]; then
   exit 1
 fi
 export WANDB_MODE="${WANDB_MODE:-online}"
-export WANDB_PROJECT="${WANDB_PROJECT:-scattered-discovery}"
+export WANDB_PROJECT="${WANDB_PROJECT:-hypodiverse}"
 export PROJECT_NAME="${PROJECT_NAME:-$WANDB_PROJECT}"
 export NNODES="${SLURM_NNODES:-1}"
 export NGPUS_PER_NODE="${NGPUS_PER_NODE:-${SLURM_GPUS_ON_NODE:-2}}"

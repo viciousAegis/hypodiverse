@@ -146,6 +146,19 @@ class RepresentativeCoverageResult:
     oracle_mode_ids: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class DiversityAtKResult:
+    """Best mean pairwise full-outcome distance in a generated bank."""
+
+    score: float
+    oracle_score: float
+    normalized_score: float
+    k: int
+    defined: bool
+    selected_mode_ids: tuple[str, ...]
+    oracle_mode_ids: tuple[str, ...]
+
+
 class PredictiveDistanceMatrix:
     def __init__(
         self,
@@ -310,6 +323,75 @@ class RepresentativeCoverageMatrix:
             minimum=min(distances),
             maximum=max(distances),
             normalized_mean=mean / theoretical_max if theoretical_max else 0.0,
+        )
+
+    def mean_pairwise_distance(self, mode_ids: Iterable[str]) -> float:
+        """Mean full-outcome distance, preserving repeated generated modes."""
+        values = tuple(
+            str(mode_id) for mode_id in mode_ids if str(mode_id) in self.mode_set
+        )
+        if len(values) < 2:
+            return 0.0
+        return sum(
+            self.distance(left, right) for left, right in combinations(values, 2)
+        ) / math.comb(len(values), 2)
+
+    def most_diverse_subset(
+        self, mode_ids: Iterable[str], k: int
+    ) -> tuple[float, tuple[str, ...]]:
+        """Select the size-``k`` generated subset with maximum separation.
+
+        Candidates are generated outputs rather than unique mode IDs, so repeated
+        hypotheses remain in the bank and contribute zero-distance pairs.
+        """
+        target_size = int(k)
+        if target_size < 2:
+            raise ValueError("Diversity@K requires k >= 2")
+        candidates = tuple(
+            str(mode_id) for mode_id in mode_ids if str(mode_id) in self.mode_set
+        )
+        if len(candidates) < target_size:
+            return (0.0, ())
+
+        best_score = -1.0
+        best_indices: tuple[int, ...] = ()
+        best_modes: tuple[str, ...] = ()
+        for indices in combinations(range(len(candidates)), target_size):
+            subset = tuple(candidates[index] for index in indices)
+            score = self.mean_pairwise_distance(subset)
+            if score > best_score + 1e-15 or (
+                math.isclose(score, best_score, abs_tol=1e-15)
+                and (not best_indices or indices < best_indices)
+            ):
+                best_score = score
+                best_indices = indices
+                best_modes = subset
+        return (max(0.0, best_score), best_modes)
+
+    def diversity_at_k(
+        self,
+        generated_mode_ids: Iterable[str | None],
+        *,
+        k: int = 4,
+    ) -> DiversityAtKResult:
+        """Compute model and oracle Diversity@K on the same evidence state."""
+        candidates = tuple(
+            mode_id
+            for mode_id in generated_mode_ids
+            if mode_id is not None and mode_id in self.mode_set
+        )
+        score, selected = self.most_diverse_subset(candidates, k)
+        oracle_score, oracle_modes = self.most_diverse_subset(self.mode_ids, k)
+        defined = len(candidates) >= k
+        normalized = score / oracle_score if defined and oracle_score > 0.0 else 0.0
+        return DiversityAtKResult(
+            score=score,
+            oracle_score=oracle_score,
+            normalized_score=min(1.0, max(0.0, normalized)),
+            k=int(k),
+            defined=defined,
+            selected_mode_ids=selected,
+            oracle_mode_ids=oracle_modes,
         )
 
     def representation_error(self, mode_ids: Iterable[str]) -> float:

@@ -127,6 +127,10 @@ def _state_metric_rows(
                 metrics["num_unique_valid_modes"] + metrics["duplicate_valid_modes"]
             )
             metrics["valid_mode_rate"] = valid_count / max(1, len(results))
+            metrics["valid_output_rate"] = metrics["valid_mode_rate"]
+            metrics["valid_outputs_per_state"] = metrics["num_evidence_consistent"]
+            metrics["distinct_valid_hypotheses"] = metrics["num_unique_valid_modes"]
+            metrics["duplicate_valid_outputs"] = metrics["duplicate_valid_modes"]
             row: dict[str, Any] = {
                 "state_id": state.state_id,
                 "K": reported_k,
@@ -187,6 +191,71 @@ def _aggregate_rows(
             result[output_metric] = _mean(
                 [float(item[source_metric]) for item in successes]
             )
+        output.append(result)
+    return output
+
+
+def _aggregate_output_counts(
+    rows: list[dict[str, Any]],
+    group_keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Summarize validity, distinctness, and repetition on all states."""
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[tuple(row[key] for key in group_keys)].append(row)
+    output = []
+    for labels, items in sorted(grouped.items(), key=lambda item: item[0]):
+        result = {key: value for key, value in zip(group_keys, labels, strict=True)}
+        result.update(
+            {
+                "support_states": len(items),
+                "pass_at_k": _mean([float(item["pass_at_k"]) for item in items]),
+                "valid_output_rate": _mean(
+                    [float(item["valid_mode_rate"]) for item in items]
+                ),
+                "valid_outputs_per_state": _mean(
+                    [float(item["num_evidence_consistent"]) for item in items]
+                ),
+                "distinct_valid_hypotheses": _mean(
+                    [float(item["num_unique_valid_modes"]) for item in items]
+                ),
+                "duplicate_valid_outputs": _mean(
+                    [float(item["duplicate_valid_modes"]) for item in items]
+                ),
+            }
+        )
+        output.append(result)
+    return output
+
+
+def _aggregate_diversity_at_4(
+    rows: list[dict[str, Any]],
+    group_keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Aggregate Diversity@4 only where at least four valid outputs exist."""
+    grouped: dict[tuple[Any, ...], list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[tuple(row[key] for key in group_keys)].append(row)
+    output = []
+    for labels, items in sorted(grouped.items(), key=lambda item: item[0]):
+        defined = [item for item in items if float(item["diversity_at_4_defined"]) > 0]
+        result = {key: value for key, value in zip(group_keys, labels, strict=True)}
+        result.update(
+            {
+                "support_states": len(items),
+                "defined_states": len(defined),
+                "defined_rate": len(defined) / max(1, len(items)),
+                "diversity_at_4": _mean(
+                    [float(item["diversity_at_4"]) for item in defined]
+                ),
+                "oracle_diversity_at_4": _mean(
+                    [float(item["oracle_diversity_at_4"]) for item in defined]
+                ),
+                "normalized_diversity_at_4": _mean(
+                    [float(item["normalized_diversity_at_4"]) for item in defined]
+                ),
+            }
+        )
         output.append(result)
     return output
 
@@ -470,6 +539,8 @@ def build_report(
         set_answer_count=set_answer_count,
     )
     by_k = _aggregate_rows(metric_rows, ("K",))
+    output_counts_by_k = _aggregate_output_counts(metric_rows, ("K",))
+    diversity_at_4_by_k = _aggregate_diversity_at_4(metric_rows, ("K",))
     by_k_m = _aggregate_rows(metric_rows, ("K", "M"))
     by_k_separation = _aggregate_rows(metric_rows, ("K", "separation_bucket"))
     by_k_m_separation = _aggregate_rows(
@@ -520,6 +591,8 @@ def build_report(
     }
     _write_csv(output_dir / "state_metrics.csv", metric_rows)
     _write_csv(output_dir / "metrics_by_k.csv", by_k)
+    _write_csv(output_dir / "output_counts_by_k.csv", output_counts_by_k)
+    _write_csv(output_dir / "diversity_at_4_by_k.csv", diversity_at_4_by_k)
     _write_csv(output_dir / "metrics_by_k_m.csv", by_k_m)
     _write_csv(output_dir / "metrics_by_k_separation.csv", by_k_separation)
     _write_csv(

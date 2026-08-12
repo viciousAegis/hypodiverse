@@ -22,7 +22,7 @@ if [[ -n "${CUDA_HOME:-}" ]]; then
   export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 fi
 
-EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/causal_micro_lab_closed_loop_k8_base.yaml}"
+EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/hypodiverse_closed_loop.yaml}"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
   PYTHON_BIN=python
@@ -30,12 +30,9 @@ fi
 CONFIG_EXPORTS="$("$PYTHON_BIN" scripts/cluster/load_run_config.py "$EVAL_CONFIG")"
 eval "$CONFIG_EXPORTS"
 
-if [[ ! -f "${EVAL_FILE:?missing EVAL_FILE}" ]]; then
-  "$PYTHON_BIN" scripts/build_causal_micro_lab_closed_loop_states.py \
-    --output-dir "$(dirname "$EVAL_FILE")" \
-    --initial-mode-counts "${INITIAL_MODE_COUNTS:-16,32}" \
-    --trajectories-per-count "${TRAJECTORIES_PER_COUNT:-64}"
-fi
+"$PYTHON_BIN" scripts/build_causal_micro_lab_closed_loop_states.py \
+  --output-dir "$(dirname "${EVAL_FILE:?missing EVAL_FILE}")" \
+  --verify-only
 
 # shellcheck disable=SC1091
 source scripts/cluster/resolve_model_path.sh

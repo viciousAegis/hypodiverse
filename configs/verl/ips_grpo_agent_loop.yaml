@@ -1,7 +1,0 @@
-# The frozen dataset names causal_micro_lab_agent_loop. Remap that name to the
-# consequence-aware rollout so IPS can identify repeated semantic outcomes.
-- name: causal_micro_lab_agent_loop
-  _target_: scattered_discovery.verl.agent_loop.IPSGRPOAgentLoop
-
-- name: ips_grpo_agent_loop
-  _target_: scattered_discovery.verl.agent_loop.IPSGRPOAgentLoop

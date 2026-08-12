@@ -99,13 +99,8 @@ Use the same held-out states and inference settings for all available
 conditions:
 
 1. base Qwen3-4B;
-2. validity-only GRPO;
-3. IPS-GRPO;
-4. latent-only GRPO;
-5. Latent IPS-GRPO.
-
-Methods that were not successfully trained should be omitted rather than
-replaced by unmatched checkpoints.
+2. GRPO;
+3. LIFPO.
 
 All trained checkpoints must use the same output schema, parser, verifier,
 temperature, maximum response length, and hypothesis-bank size.
@@ -219,7 +214,7 @@ At every evidence stage, report:
 - parse validity;
 - syntax validity;
 - evidence consistency;
-- number of unique valid semantic modes;
+- number of distinct valid hypotheses;
 - budget-normalised exact coverage;
 - duplicate rate;
 - effective mode count;
@@ -252,7 +247,7 @@ worlds.
 - Report means with bootstrap confidence intervals over hidden worlds.
 - Plot identification success as a function of experiment count.
 - Plot mean \(\log_2 |V(E_t)|\) with confidence bands.
-- Report paired differences from validity-only GRPO.
+- Report paired differences from GRPO.
 - Report all primary curves separately for \(M_0=16\) and \(M_0=32\).
 - Use current \(\log_2|V(E_t)|\) directly; do not introduce stage bins.
 - Slice secondary diagnostics by predictive-separation tertile.
@@ -276,33 +271,10 @@ must be stated explicitly.
    predicted outcomes, selected experiment, observation, and version-space
    reduction.
 
-## Implementation Work
+## Implementation
 
-The repository already provides:
-
-- exact hypothesis parsing and verification;
-- complete intervention signatures;
-- hidden-world simulation;
-- exact version-space recomputation;
-- empirical outcome entropy;
-- deterministic disagreement selection; and
-- an oracle-only closed-loop runner.
-
-The missing component is a model-backed closed-loop runner.
-
-### Proposed Files
-
-- Extend
-  `src/scattered_discovery/envs/causal_micro_lab/planner.py` with generated-bank
-  trajectory utilities while preserving the existing oracle API.
-- Add `scripts/run_causal_micro_lab_closed_loop_eval.py`.
-- Add a cluster evaluation YAML containing model endpoint, state file, \(K\),
-  \(T\), decoding, concurrency, output, and W&B settings.
-- Add a cluster launcher that starts SGLang and invokes the runner.
-
-### Runner Responsibilities
-
-The runner should:
+The model-backed runner reuses the exact parser, verifier, simulator, and
+version-space engine used by frozen evaluation. It:
 
 1. load private held-out `EvidenceState` records;
 2. maintain one mutable trajectory state per hidden world;
@@ -342,17 +314,13 @@ the trace and evaluator only; they must never appear in model prompts.
 
 ## Cluster Invocation
 
-The Slurm launcher accepts a training-run name, a merged Hugging Face model
-directory, or a Hub model ID. For a training run, it selects the latest
-complete actor checkpoint and reuses the corresponding merged model under
-`$MODEL_ROOT/eval_checkpoints`; it invokes the veRL FSDP merger only when that
-serving model does not already exist.
-
-Evaluate the latest validity-only GRPO checkpoint with:
+The Slurm launcher accepts one of the three public model conditions and uses
+the released Hugging Face checkpoints:
 
 ```bash
-sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm \
-  causal_micro_lab_cluster_validity_grpo_r1
+sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm base
+sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm grpo
+sbatch scripts/cluster/sbatch_causal_micro_lab_closed_loop_eval.slurm lifpo
 ```
 
 ## Interpretation

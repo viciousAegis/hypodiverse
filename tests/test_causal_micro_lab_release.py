@@ -84,7 +84,7 @@ class CausalMicroLabReleaseTest(unittest.TestCase):
                 validation_rows,
             ),
             "test": write_jsonl(
-                self.root / "eval_sets/causal_micro_lab/final_v3/verl_test.jsonl",
+                self.root / "eval_sets/causal_micro_lab/canonical_eval/verl_test.jsonl",
                 test_rows,
             ),
         }
@@ -93,12 +93,12 @@ class CausalMicroLabReleaseTest(unittest.TestCase):
             [{"mode_id": "m1"}],
         )
         write_jsonl(
-            self.root / "eval_sets/causal_micro_lab/final_v3/states.jsonl",
+            self.root / "eval_sets/causal_micro_lab/canonical_eval/states.jsonl",
             [{"state_id": "test-1"}],
         )
-        (self.root / "eval_sets/causal_micro_lab/final_v3/manifest.json").write_text(
-            '{"version": 3}\n', encoding="utf-8"
-        )
+        (
+            self.root / "eval_sets/causal_micro_lab/canonical_eval/manifest.json"
+        ).write_text('{"version": 3}\n', encoding="utf-8")
         return files
 
     def _make_model(self, method: str) -> Path:
@@ -142,7 +142,7 @@ class CausalMicroLabReleaseTest(unittest.TestCase):
 
         manifest = json.loads((output / "release_manifest.json").read_text())
         self.assertEqual(result["rows"], {"train": 1, "validation": 1, "test": 1})
-        self.assertEqual(len(manifest["exact_configs"]), 4)
+        self.assertEqual(len(manifest["exact_configs"]), 5)
         self.assertFalse(manifest["split_overlap"]["any_state_id_overlap"])
         self.assertFalse(manifest["split_overlap"]["any_prompt_overlap"])
         file_hashes = {entry["path"]: entry["sha256"] for entry in manifest["files"]}

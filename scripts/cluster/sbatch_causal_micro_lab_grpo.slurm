@@ -1,15 +1,15 @@
 #!/bin/bash
-#SBATCH -J cml-final-eval
+#SBATCH -J hypodiverse-grpo
 #SBATCH -A MLMI-as3727-SL2-GPU
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --error=logs/%x-%j.err
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
-#SBATCH --mem=96G
-#SBATCH --time=01:15:00
-#SBATCH --mail-type=END,FAIL
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=256G
+#SBATCH --time=12:00:00
+#SBATCH --mail-type=NONE
 #SBATCH -p ampere
 
 set -euo pipefail
@@ -47,8 +47,16 @@ source scripts/cluster/prepend_venv_cuda_libs.sh
 
 python -m scattered_discovery.release.download
 
-export EVAL_CONFIG="${EVAL_CONFIG:-configs/verl/eval/hypodiverse_base.yaml}"
-export PYTHON_BIN="${PYTHON_BIN:-python3}"
-export SGLANG_PORT="${SGLANG_PORT:-$((20000 + SLURM_JOB_ID % 20000))}"
+if [[ -z "${WANDB_API_KEY:-}" ]]; then
+  echo "WANDB_API_KEY was not loaded from $REPO_DIR/.env" >&2
+  exit 1
+fi
+export WANDB_MODE="${WANDB_MODE:-online}"
+export WANDB_PROJECT="${WANDB_PROJECT:-hypodiverse}"
+export PROJECT_NAME="${PROJECT_NAME:-$WANDB_PROJECT}"
+export NNODES="${SLURM_NNODES:-1}"
+export NGPUS_PER_NODE="${NGPUS_PER_NODE:-${SLURM_GPUS_ON_NODE:-2}}"
+export ROLLOUT_TP="${ROLLOUT_TP:-${TP:-1}}"
+export RUN_CONFIG="${RUN_CONFIG:-configs/verl/runs/causal_micro_lab_cluster_grpo.yaml}"
 
-scripts/cluster/run_causal_micro_lab_eval_openai.sh "$@"
+scripts/cluster/run_verl_pilot_grpo.sh "$@"
