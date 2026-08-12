@@ -2,8 +2,8 @@
 
 HypoDiverse is an enumerable synthetic benchmark for measuring whether language
 models generate **predictively diverse sets of valid scientific hypotheses**.
-It accompanies the thesis *Beyond Correctness: Measuring and Optimising
-Predictive Diversity in Verifiable Hypothesis Generation*.
+It accompanies the thesis *Measuring Hypothesis Diversity in
+Verifiable Scientific Generation*.
 
 The benchmark uses small Boolean causal systems with three observed inputs, two
 intermediate variables, and one output. A prompt reveals a subset of
