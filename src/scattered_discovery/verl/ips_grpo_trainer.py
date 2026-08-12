@@ -139,7 +139,10 @@ if _AgentLoopWorkerTQ is not None and _AgentLoopManagerTQ is not None:
     class IPSGRPOAgentLoopWorkerTQ(_AgentLoopWorkerTQ.__ray_metadata__.modified_class):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             super().__init__(*args, **kwargs)
-            method_config = self.config.algorithm.get("ips_grpo", {})
+            method_config = self.config.algorithm.get(
+                "lifpo",
+                self.config.algorithm.get("ips_grpo", {}),
+            )
             self.ips_agent_loop_name = (
                 "latent_grpo_agent_loop"
                 if bool(method_config.get("latent_enabled", False))
@@ -204,6 +207,19 @@ def _config_value(config: Any, key: str, default: Any) -> Any:
     if hasattr(config, "get"):
         return config.get(key, default)
     return getattr(config, key, default)
+
+
+def _config_value_alias(
+    config: Any,
+    primary: str,
+    legacy: str,
+    default: Any,
+) -> Any:
+    sentinel = object()
+    value = _config_value(config, primary, sentinel)
+    if value is not sentinel:
+        return value
+    return _config_value(config, legacy, default)
 
 
 def _as_float(value: Any, *, field: str, index: int) -> float:
@@ -535,6 +551,7 @@ def compute_latent_ips_grpo_advantages(
     mi_token_scope: str = "answer",
     mi_reduction: str = "mean",
     mi_valid_only: bool = True,
+    metric_prefix: str = "latent_ips",
 ) -> tuple[Any, Any, dict[str, float]]:
     """Combine validity, latent specificity, and optional empirical IPS."""
     import torch
@@ -555,6 +572,8 @@ def compute_latent_ips_grpo_advantages(
         raise ValueError("IPS reward mode must be 'replace' or 'bonus'")
     if ips_bonus_max < 0.0:
         raise ValueError("IPS bonus maximum must be non-negative")
+    if not metric_prefix or "/" in metric_prefix:
+        raise ValueError("metric_prefix must be one non-empty path component")
     shapes = {
         tuple(token_level_rewards.shape),
         tuple(response_mask.shape),
@@ -902,6 +921,15 @@ def compute_latent_ips_grpo_advantages(
         metrics[f"latent_ips/M_{mode_count}/unique_valid_outcomes_per_group"] = mean(
             [float(value) for value in unique_by_group]
         )
+    if metric_prefix != "latent_ips":
+        metrics = {
+            (
+                f"{metric_prefix}/{key.removeprefix('latent_ips/')}"
+                if key.startswith("latent_ips/")
+                else key
+            ): value
+            for key, value in metrics.items()
+        }
     return advantages, advantages, metrics
 
 
@@ -909,7 +937,10 @@ class IPSGRPOTrainerMixin:
     """veRL v1 trainer extension implementing empirical IPS-GRPO."""
 
     def _ips_config(self) -> Any:
-        return self.config.algorithm.get("ips_grpo", {})
+        return self.config.algorithm.get(
+            "lifpo",
+            self.config.algorithm.get("ips_grpo", {}),
+        )
 
     def _latent_enabled(self) -> bool:
         return bool(_config_value(self._ips_config(), "latent_enabled", False))
@@ -1208,53 +1239,85 @@ class IPSGRPOTrainerMixin:
                     ].index_select(0, real_index_tensor),
                     index=uid[real_indices].tolist(),
                     metadata=ips_metadata,
-                    epsilon=float(_config_value(self._ips_config(), "epsilon", 0.2)),
+                    epsilon=float(
+                        _config_value_alias(
+                            self._ips_config(),
+                            "frequency_epsilon",
+                            "epsilon",
+                            0.2,
+                        )
+                    ),
                     mi_alpha=float(
-                        _config_value(self._ips_config(), "latent_mi_alpha", 0.1)
+                        _config_value_alias(
+                            self._ips_config(),
+                            "counterfactual_alpha",
+                            "latent_mi_alpha",
+                            0.1,
+                        )
                     ),
                     mi_clip=float(
-                        _config_value(self._ips_config(), "latent_mi_clip", 1.0)
+                        _config_value_alias(
+                            self._ips_config(),
+                            "counterfactual_clip",
+                            "latent_mi_clip",
+                            1.0,
+                        )
                     ),
                     mi_token_scope=str(
-                        _config_value(
+                        _config_value_alias(
                             self._ips_config(),
+                            "counterfactual_token_scope",
                             "latent_mi_token_scope",
                             "answer",
                         )
                     ),
                     mi_reduction=str(
-                        _config_value(
+                        _config_value_alias(
                             self._ips_config(),
+                            "counterfactual_reduction",
                             "latent_mi_reduction",
                             "mean",
                         )
                     ),
                     mi_valid_only=bool(
-                        _config_value(
+                        _config_value_alias(
                             self._ips_config(),
+                            "counterfactual_valid_only",
                             "latent_mi_valid_only",
                             True,
                         )
                     ),
                     use_ips=bool(
-                        _config_value(self._ips_config(), "latent_use_ips", True)
+                        _config_value_alias(
+                            self._ips_config(),
+                            "inverse_frequency_enabled",
+                            "latent_use_ips",
+                            True,
+                        )
                     ),
                     latent_count=int(
                         _config_value(self._ips_config(), "latent_count", 8)
                     ),
                     ips_reward_mode=str(
-                        _config_value(
+                        _config_value_alias(
                             self._ips_config(),
+                            "frequency_credit_mode",
                             "latent_ips_reward_mode",
                             "replace",
                         )
                     ),
                     ips_bonus_max=float(
-                        _config_value(
+                        _config_value_alias(
                             self._ips_config(),
+                            "frequency_credit_max",
                             "latent_ips_bonus_max",
                             0.25,
                         )
+                    ),
+                    metric_prefix=(
+                        "lifpo"
+                        if self.config.algorithm.get("lifpo", None) is not None
+                        else "latent_ips"
                     ),
                 )
             )
@@ -1269,7 +1332,14 @@ class IPSGRPOTrainerMixin:
                 ),
                 index=uid[real_indices].tolist(),
                 metadata=ips_metadata,
-                epsilon=float(_config_value(self._ips_config(), "epsilon", 0.2)),
+                epsilon=float(
+                    _config_value_alias(
+                        self._ips_config(),
+                        "frequency_epsilon",
+                        "epsilon",
+                        0.2,
+                    )
+                ),
             )
         data.batch["advantages"] = scatter_real_rows(
             data.batch["response_mask"],

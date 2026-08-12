@@ -22,19 +22,43 @@ if [[ "$#" -lt 2 || "$#" -gt 3 ]]; then
   cat >&2 <<'EOF'
 Usage:
   sbatch scripts/cluster/sbatch_causal_micro_lab_v3_checkpoint_eval.slurm \
-    TRAINING_RUN {standard|latent} [CHECKPOINT_STEP]
+    TRAINING_RUN {standard|lifpo|latent} [CHECKPOINT_STEP]
 
 The latest complete actor checkpoint is selected when CHECKPOINT_STEP is
-omitted. FSDP shards are merged once and then reused.
+omitted. FSDP shards are merged once and then reused. The 'latent' mode is a
+deprecated alias for 'lifpo'.
 EOF
   exit 2
 fi
 
-if [[ "$2" == "latent" ]]; then
-  export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_latent_v3.yaml"
-else
-  export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_base_v3.yaml"
-fi
-export EVAL_LABEL="final_v3_k16"
+TRAINING_RUN="$1"
+PUBLIC_MODE="$2"
+CHECKPOINT_STEP="${3:-}"
+case "$PUBLIC_MODE" in
+  standard)
+    INTERNAL_MODE="standard"
+    export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_base_v3.yaml"
+    export EVAL_LABEL="final_v3_k16"
+    ;;
+  lifpo)
+    INTERNAL_MODE="latent"
+    export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_lifpo_v3.yaml"
+    export EVAL_LABEL="final_v3_k16_lifpo"
+    ;;
+  latent)
+    echo "EVAL_MODE 'latent' is deprecated; use 'lifpo'." >&2
+    INTERNAL_MODE="latent"
+    export EVAL_CONFIG="configs/verl/eval/causal_micro_lab_final_k16_lifpo_v3.yaml"
+    export EVAL_LABEL="final_v3_k16_lifpo"
+    ;;
+  *)
+    echo "EVAL_MODE must be 'standard', 'lifpo', or 'latent', got: $PUBLIC_MODE" >&2
+    exit 2
+    ;;
+esac
 
-bash "$SCRIPT_DIR/sbatch_causal_micro_lab_checkpoint_eval.slurm" "$@"
+ARGS=("$TRAINING_RUN" "$INTERNAL_MODE")
+if [[ -n "$CHECKPOINT_STEP" ]]; then
+  ARGS+=("$CHECKPOINT_STEP")
+fi
+bash "$SCRIPT_DIR/sbatch_causal_micro_lab_checkpoint_eval.slurm" "${ARGS[@]}"

@@ -1,0 +1,36 @@
+# Frozen Boolean Causal Micro-Lab v3 evaluation for LIFPO checkpoints.
+# One K=16 bank supplies deterministic K=4,8,12,16 prefixes. The latent_count
+# setting preserves LIFPO's stratified latent assignment at inference time.
+
+prepare_datasets: 0
+causal_micro_lab_generate_dataset_if_missing: 0
+
+model_id: Qwen/Qwen3-4B
+download_model: 0
+eval_file: eval_sets/causal_micro_lab/final_v3/verl_test.jsonl
+output_dir: artifacts/causal_micro_lab_final_eval_v3
+run_name: causal_micro_lab_final_v3_k16_lifpo
+
+rollouts_per_spec: 16
+prefix_ks: 4,8,12,16
+latent_count: 8
+eval_workers: 128
+max_response_length: 6000
+temperature: 1.0
+top_p: 1.0
+think: true
+thinking_fallback: true
+fallback_max_response_length: 256
+fallback_temperature: 0.0
+build_eval_report: true
+bootstrap_samples: 2000
+request_timeout_s: 1800
+transcripts: 0
+wandb_project: scattered-discovery
+
+serve_model: 1
+sglang_host: 127.0.0.1
+sglang_port: 30000
+sglang_tp: 1
+sglang_mem_fraction_static: 0.82
+sglang_extra_args: "--attention-backend triton --prefill-attention-backend triton --decode-attention-backend triton --sampling-backend pytorch"

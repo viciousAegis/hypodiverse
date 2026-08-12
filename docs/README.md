@@ -6,6 +6,9 @@ For the config directory layout itself, see [../configs/README.md](../configs/RE
 
 ## Guides
 
+- [HypoDiverse Reproducibility](causal_micro_lab_reproducibility.md): frozen
+  dataset hashes, canonical GRPO/LIFPO runs, evaluation protocol, and Hub
+  publishing order.
 - [Setup](setup.md): local dependencies, repo-local caches, Ollama, and W&B.
 - [Dataset Generation](datasets.md): YAML schema, CLI flags, generated row format, and Parquet/JSONL outputs.
 - [Scenario Examples](scenarios.md): ready-to-copy examples for easy/hard scattered causal, set protocol, noisy evidence, and mixed training files.

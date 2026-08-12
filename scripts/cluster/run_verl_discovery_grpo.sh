@@ -241,6 +241,27 @@ if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.cd_grpo_main" ]]; then
   )
 fi
 
+LIFPO=()
+if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.lifpo_main" ]]; then
+  LIFPO=(
+    +actor_rollout_ref.rollout.agent.agent_loop_manager_class=scattered_discovery.verl.lifpo_trainer.LIFPOAgentLoopManager
+    +algorithm.lifpo.frequency_epsilon="${LIFPO_FREQUENCY_EPSILON:-0.2}"
+    +algorithm.lifpo.probe_fraction="${LIFPO_PROBE_FRACTION:-1.0}"
+    +algorithm.lifpo.length_penalty_start="${LIFPO_LENGTH_PENALTY_START:-3072}"
+    +algorithm.lifpo.latent_enabled="${LIFPO_LATENT_ENABLED:-true}"
+    +algorithm.lifpo.latent_count="${LIFPO_LATENT_COUNT:-8}"
+    +algorithm.lifpo.negative_offset="${LIFPO_NEGATIVE_OFFSET:-1}"
+    +algorithm.lifpo.counterfactual_alpha="${LIFPO_COUNTERFACTUAL_ALPHA:-0.5}"
+    +algorithm.lifpo.counterfactual_clip="${LIFPO_COUNTERFACTUAL_CLIP:-1.0}"
+    +algorithm.lifpo.counterfactual_token_scope="${LIFPO_COUNTERFACTUAL_TOKEN_SCOPE:-full_response}"
+    +algorithm.lifpo.counterfactual_reduction="${LIFPO_COUNTERFACTUAL_REDUCTION:-sum}"
+    +algorithm.lifpo.counterfactual_valid_only="${LIFPO_COUNTERFACTUAL_VALID_ONLY:-true}"
+    +algorithm.lifpo.inverse_frequency_enabled="${LIFPO_INVERSE_FREQUENCY_ENABLED:-true}"
+    +algorithm.lifpo.frequency_credit_mode="${LIFPO_FREQUENCY_CREDIT_MODE:-bonus}"
+    +algorithm.lifpo.frequency_credit_max="${LIFPO_FREQUENCY_CREDIT_MAX:-0.5}"
+  )
+fi
+
 IPS_GRPO=()
 if [[ "$TRAINER_ENTRYPOINT" == "scattered_discovery.verl.ips_grpo_main" ]]; then
   IPS_GRPO=(
@@ -274,5 +295,6 @@ fi
   "${REF[@]}" \
   "${TRAINER[@]}" \
   "${CD_GRPO[@]}" \
+  "${LIFPO[@]}" \
   "${IPS_GRPO[@]}" \
   "$@"

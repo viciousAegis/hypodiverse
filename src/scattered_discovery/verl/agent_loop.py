@@ -557,15 +557,23 @@ class CDGRPOAgentLoop(AgentLoopBase):  # type: ignore[misc]
         task_config = env_spec.get("task") or {}
         agent_config = env_spec.get("agent") or {}
         method_config = self.config.algorithm.get(
-            "cd_grpo",
-            self.config.algorithm.get("ips_grpo", {}),
+            "lifpo",
+            self.config.algorithm.get(
+                "cd_grpo",
+                self.config.algorithm.get("ips_grpo", {}),
+            ),
         )
         max_response_length = int(self.rollout_config.response_length)
         request_id = _as_text(kwargs.get("uid", uuid4().hex))
         rollout_index = int(kwargs.get("session_id", 0))
         latent_enabled = bool(method_config.get("latent_enabled", False))
         latent_count = int(method_config.get("latent_count", 8))
-        latent_negative_offset = int(method_config.get("latent_negative_offset", 1))
+        latent_negative_offset = int(
+            method_config.get(
+                "negative_offset",
+                method_config.get("latent_negative_offset", 1),
+            )
+        )
         latent_id = (
             latent_id_for_rollout(rollout_index, latent_count) if latent_enabled else 0
         )

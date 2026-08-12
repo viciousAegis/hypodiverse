@@ -1,0 +1,10 @@
+# Public LIFPO registration. The legacy name remains available so historical
+# veRL payloads and checkpoints can still be evaluated.
+- name: causal_micro_lab_agent_loop
+  _target_: scattered_discovery.verl.lifpo_agent_loop.LIFPOAgentLoop
+
+- name: lifpo_agent_loop
+  _target_: scattered_discovery.verl.lifpo_agent_loop.LIFPOAgentLoop
+
+- name: latent_grpo_agent_loop
+  _target_: scattered_discovery.verl.lifpo_agent_loop.LIFPOAgentLoop

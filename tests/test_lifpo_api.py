@@ -1,0 +1,58 @@
+from pathlib import Path
+import unittest
+
+import yaml
+
+from scattered_discovery.verl.lifpo_main import require_v1_cli
+from scattered_discovery.verl.lifpo_trainer import compute_lifpo_advantages
+from scattered_discovery.verl.ips_grpo_trainer import (
+    compute_latent_ips_grpo_advantages,
+)
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class LIFPOAPITests(unittest.TestCase):
+    def test_canonical_advantage_name_preserves_evaluated_implementation(self):
+        self.assertIsNot(compute_lifpo_advantages, compute_latent_ips_grpo_advantages)
+
+    def test_lifpo_requires_v1_runner(self):
+        with self.assertRaises(SystemExit):
+            require_v1_cli([])
+        require_v1_cli(["trainer.use_v1=True"])
+
+    def test_agent_config_registers_public_and_legacy_names(self):
+        entries = yaml.safe_load(
+            (ROOT / "configs" / "verl" / "lifpo_agent_loop.yaml").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            [entry["name"] for entry in entries],
+            [
+                "causal_micro_lab_agent_loop",
+                "lifpo_agent_loop",
+                "latent_grpo_agent_loop",
+            ],
+        )
+
+    def test_shared_launcher_accepts_public_entrypoint(self):
+        launcher = (
+            ROOT / "scripts" / "cluster" / "run_verl_discovery_grpo.sh"
+        ).read_text(encoding="utf-8")
+        self.assertIn("scattered_discovery.verl.lifpo_main", launcher)
+        self.assertIn("LIFPOAgentLoopManager", launcher)
+        self.assertIn("+algorithm.lifpo.frequency_credit_mode=", launcher)
+        self.assertNotIn("+algorithm.lifpo.latent_ips", launcher)
+
+    def test_rollout_loop_reads_public_lifpo_algorithm_block(self):
+        source = (
+            ROOT / "src" / "scattered_discovery" / "verl" / "agent_loop.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn('self.config.algorithm.get(\n            "lifpo",', source)
+        self.assertIn('"negative_offset"', source)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -199,106 +199,31 @@ Those three files are computed from the same generated sample slots
 `sample0000` through `sample0015`, so `k=4` is the first four samples of the
 same `k=16` run rather than a separate stochastic eval.
 
-## Frozen continuous-separation comparison eval v2
+## Frozen HypoDiverse evaluation
 
-The continuous-separation comparison set is committed under:
+The thesis evaluation set is committed under
+`eval_sets/causal_micro_lab/final_v3/`. It contains 192 held-out states, with
+48 states for each compatible-hypothesis count `M = 4, 8, 12, 16`. The split
+has no state-ID or prompt overlap with the released training and validation
+rows.
 
-```text
-eval_sets/causal_micro_lab/final_v2/
-```
+Each condition generates one ordered bank of 16 completions per state. Results
+at budgets 4, 8, and 12 use prefixes of that same bank, keeping all budget
+comparisons paired. Generation uses a 6000-token thinking pass followed, only
+when the final answer is empty, by a deterministic 256-token non-thinking
+fallback.
 
-It contains 192 states: 48 each for `M={4,8,12,16}`. For every `M`, states are
-chosen near 48 evenly spaced values across the empirically supported continuous
-positive target-`Y` separation interval. Zero-separation states remain in the
-characterization bank but are excluded because they contain no predictive
-diversity to recover. No low/medium/high labels are used. Every row
-uses a distinct held-out hidden mode, version space, and visible evidence
-prompt. Its manifest records the range, percentiles, largest adjacent gap,
-SHA-256 hashes, and a zero-overlap audit against existing training, validation,
-debug, and legacy evaluation states.
-
-The CPU-only construction is reproducible:
-
-```bash
-PYTHONPATH=src python scripts/build_causal_micro_lab_diversity_characterization.py
-PYTHONPATH=src python scripts/build_causal_micro_lab_final_eval_v2.py
-```
-
-The first command recomputes continuous predictive separation for the larger
-characterization bank. The second deterministically freezes 48 states per `M`
-across the supported axis and fails if any split or prompt overlap is detected.
-The v1 files and config remain unchanged for reproducing older experiments.
-
-Submit the four model evaluations independently so that failures and reruns are
-isolated:
-
-```bash
-V2=configs/verl/eval/causal_micro_lab_final_k16_base_v2.yaml
-
-sbatch --job-name=cml-v2-base --time=03:00:00 \
-  --export=ALL,EVAL_CONFIG="$V2" \
-  scripts/cluster/sbatch_causal_micro_lab_final_eval.slurm
-
-sbatch --job-name=cml-v2-validity --time=03:00:00 \
-  --export=ALL,EVAL_CONFIG="$V2",RUN_NAME=causal_micro_lab_final_v2_k16_validity \
-  scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
-  causal_micro_lab_cluster_validity_grpo_r1 standard 90
-
-sbatch --job-name=cml-v2-ips --time=03:00:00 \
-  --export=ALL,EVAL_CONFIG="$V2",RUN_NAME=causal_micro_lab_final_v2_k16_ips \
-  scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
-  causal_micro_lab_cluster_ips_grpo_v1_eps02_r1 standard 60
-
-sbatch --job-name=cml-v2-latent --time=03:00:00 \
-  --export=ALL,EVAL_CONFIG="$V2",RUN_NAME=causal_micro_lab_final_v2_k16_latent_ips \
-  scripts/cluster/sbatch_causal_micro_lab_checkpoint_eval.slurm \
-  causal_micro_lab_cluster_latent_ips_grpo_v2_fulltraj_k8_r1 latent 55
-```
-
-The trained-model jobs use the existing checkpoint evaluator. Each independently
-merges its veRL FSDP shards with the standard `verl.model_merger` only when its
-complete Hugging Face merge is absent, then starts SGLang and evaluates the
-frozen v2 set. The steps are pinned to Validity 90, IPS-v1 60, and Latent-v2 55.
-
-The run samples `K=16` independent completions per state and derives
-`K={4,8,12}` from stable prefixes of the same bank. Each primary request gets
-6000 response tokens with Qwen thinking enabled. A request ending with
-`finish_reason=length` is automatically finalized by a short deterministic
-second request with thinking disabled and the original reasoning supplied as
-context.
-
-Results and live W&B metrics are written under:
-
-```text
-artifacts/causal_micro_lab_final_eval_v2/
-```
-
-The `latest/report/` directory contains CSV tables for bootstrap confidence
-intervals, per-state metrics with continuous separation, and mode
-reachability. Corresponding comparison plots are logged to W&B. Important
-outputs include exact and
-budget-normalized coverage, valid-output rate, duplicity among valid outputs,
-dominant-mode mass, effective mode count, mechanism-family coverage, generated
-consequence separation, oracle-normalized predictive diversity recovery
-(`PDR@K`), cap-hit rate, and fallback success.
-
-## Geometry-aware representative-coverage eval v3
-
-The frozen v3 evaluation replaces the narrow target-Y separation summary with
-full-outcome distance and representative coverage of the valid hypothesis
-space. It keeps validity, mode count, and same-cardinality placement quality as
-separate reported quantities. Cluster construction, checkpoint pins, launch
-commands, W&B names, and comparison commands are documented in:
-
-```text
-docs/causal_micro_lab_v3_cluster_eval.md
-```
-
-Submit the four independent base/Validity/IPS/Latent evaluations with:
+Submit the frozen Base, GRPO, and LIFPO evaluations with:
 
 ```bash
 bash scripts/cluster/submit_causal_micro_lab_v3_evals.sh
 ```
+
+The checkpoint wrapper merges FSDP shards only when the corresponding
+Hugging Face directory is absent. Results are written below
+`artifacts/causal_micro_lab_final_eval_v3/` and logged to W&B. The release
+procedure, exact checkpoint steps, dataset hashes, and Hub revisions are in
+`docs/causal_micro_lab_reproducibility.md`.
 
 ## CD-GRPO on the Slurm cluster
 
