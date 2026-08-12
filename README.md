@@ -40,8 +40,8 @@ The training stack targets Linux, Python 3.11 or 3.12, CUDA, veRL, and SGLang.
 Project dependencies are managed with `uv`.
 
 ```bash
-git clone https://github.com/viciousAegis/open-discovery.git
-cd open-discovery
+git clone https://github.com/viciousAegis/hypodiverse.git
+cd hypodiverse
 UV_CACHE_DIR=.uv-cache uv sync --extra verl
 source .venv/bin/activate
 ```
